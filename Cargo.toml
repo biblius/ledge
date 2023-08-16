@@ -1,0 +1,20 @@
+[package]
+edition = "2021"
+name = "biblius-bo"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dotenv = "0.15.0"
+markdown = "1.0.0-alpha.11"
+postgres = "0.19.5"
+rouille = "3.6.2"
+serde = "1.0.183"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+panic = "abort"
+strip = true
