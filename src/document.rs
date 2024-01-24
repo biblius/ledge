@@ -7,6 +7,7 @@ use crate::state::State;
 use crate::FILES_PER_THREAD;
 use crate::{error::KnawledgeError, MAX_THREADS};
 use std::ffi::OsStr;
+use std::time::Instant;
 use std::{
     fmt::Debug,
     fs,
@@ -194,9 +195,13 @@ pub async fn extract_dir(
             files_remaining -= FILES_PER_THREAD;
         }
 
+        type TaskWithStart<'a> = (
+            ScopedJoinHandle<'a, Result<Vec<Document>, KnawledgeError>>,
+            Instant,
+        );
+
         std::thread::scope(|scope| {
-            let mut tasks: Vec<ScopedJoinHandle<'_, Result<Vec<Document>, KnawledgeError>>> =
-                Vec::with_capacity(*MAX_THREADS);
+            let mut tasks: Vec<TaskWithStart> = Vec::with_capacity(*MAX_THREADS);
 
             for batch in batches {
                 if batch.is_empty() {
@@ -212,13 +217,23 @@ pub async fn extract_dir(
                     Ok(files)
                 });
 
-                tasks.push(task);
+                debug!("Spawned thread {:?}", task.thread().id());
+
+                tasks.push((task, Instant::now()));
             }
 
-            for task in tasks {
+            for (task, start) in tasks {
+                let id = task.thread().id();
                 let result = task.join();
                 match result {
-                    Ok(Ok(processed)) => files_processed.extend(processed),
+                    Ok(Ok(processed)) => {
+                        files_processed.extend(processed);
+                        debug!(
+                            "Thread {:?} finished in {}ms",
+                            id,
+                            Instant::now().duration_since(start).as_nanos() as f32 * 0.001
+                        );
+                    }
                     Ok(Err(e)) => error!("Error occurred while processing files: {e:?}"),
                     Err(e) => error!("Error occurred while processing files: {e:?}"),
                 }
