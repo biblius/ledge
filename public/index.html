@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+
+<head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content="Knawledger" />
+    <script type="module" src="/htmx.min.js"></script>
+    <script type="module" src="/index.js"></script>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+
+
+<body>
+    <header>
+        <h1 hx-get="/main/index.md" hx-replace-url="/" hx-target="#main">Knawledger</h1>
+    </header>
+
+    <aside class="sidebar">
+        <h2 hx-get="/main/index.md" hx-replace-url="/" hx-target="#main">Library</h2>
+        <ul id="sidebar-document-container" hx-trigger="load" hx-get="/documents" hx-swap="innerHTML"></ul>
+    </aside>
+
+    <main id="main"> {{ main }} </main>
+</body>

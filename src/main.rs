@@ -1,66 +1,58 @@
-use markdown::Options;
-use rouille::{post_input, router, try_or_400};
-use std::{
-    fs, io,
-    sync::{Arc, Mutex},
-};
+use state::DocumentCache;
+use std::num::NonZeroUsize;
+use tracing::{info, Level};
 
-fn main() {
+use crate::{document::extract_dir, state::State};
+
+pub const FILES_PER_THREAD: usize = 128;
+
+lazy_static::lazy_static! {
+    pub static ref MAX_THREADS: usize = std::thread::available_parallelism().unwrap_or(NonZeroUsize::new(1).unwrap()).into();
+}
+
+pub mod db;
+pub mod document;
+pub mod error;
+pub mod htmx;
+pub mod router;
+pub mod state;
+
+#[tokio::main]
+async fn main() {
     dotenv::dotenv().ok();
 
-    let client = Arc::new(Mutex::new(
-        postgres::Client::connect(
-            &std::env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
-            postgres::NoTls,
-        )
-        .expect("Could not establish PG connection"),
-    ));
+    tracing_subscriber::fmt()
+        .with_max_level(Level::DEBUG)
+        .init();
 
-    let host = std::env::var("HOST").unwrap();
-    let port = std::env::var("PORT").unwrap();
+    let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
 
-    println!("Now listening on {host}:{port}");
-    rouille::start_server(format!("{host}:{port}"), move |request| {
-        rouille::log(request, io::stdout(), || {
-            let page = fs::read_to_string("index.html").unwrap();
-            router!(request,
-                (GET) ["/"] => {
-                    rouille::Response::html(page)
-                },
+    let host = "127.0.0.1";
+    let port = "3002";
 
-                (GET) ["/favicon.ico"] => {
-                    let res = rouille::match_assets(request, "public");
-                    if res.is_success() {
-                        res
-                    } else {
-                        rouille::Response::empty_404()
-                    }
-                },
+    let addr = format!("{host}:{port}");
 
-                (POST) ["/"] => {
-                    let data = try_or_400!(post_input!(request, {
-                        title: String,
-                        descr: String,
-                        category: String,
-                        file: String,
-                    }));
+    let mut state = State::new(&db_url).await;
 
-                    let file = markdown::to_html_with_options(&data.file, &Options::gfm()).unwrap();
+    let (existing, new) = extract_dir(&state, "content").await.unwrap();
 
-                    println!("Received data: {:?}", file);
+    for file in existing.into_iter() {
+        state.cache.set(file.file_name.clone(), file).unwrap();
+    }
 
-                    client
-                      .lock()
-                      .unwrap()
-                      .execute("INSERT INTO posts(title, descr, category, content) VALUES ($1, $2, $3, $4)",
-                         &[&data.title, &data.descr, &data.category, &file])
-                      .unwrap();
+    for file in new.into_iter() {
+        state.cache.set(file.file_name.clone(), file).unwrap();
+    }
 
-                    rouille::Response::html("Success! <a href=\"/\">Go back</a>.")
-                },
+    info!("Now listening on {addr}");
 
-                _ => rouille::Response::empty_404()
-            )
-        })
-    });
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .expect("error while starting TCP listener");
+
+    let router = router::router(state);
+
+    axum::serve(listener, router)
+        .await
+        .expect("error while starting server");
 }
