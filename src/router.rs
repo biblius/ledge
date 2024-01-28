@@ -10,12 +10,12 @@ use minijinja::context;
 use tower_http::{services::ServeFile, trace::TraceLayer};
 
 use crate::{
-    document::find_title_from_header,
+    db::DirectoryEntry,
     error::KnawledgeError,
-    htmx::{MainDocumentHtmx, SidebarDocumentHtmx},
-    state::{DocumentCache, State},
+    htmx::{MainDocumentHtmx, SidebarContainer, SidebarDirectoryHtmx, SidebarDocumentHtmx},
+    state::State,
 };
-use std::fmt::Write;
+use std::{collections::HashMap, fmt::Write};
 
 pub fn router(state: State) -> Router {
     Router::new()
@@ -31,31 +31,106 @@ pub fn router(state: State) -> Router {
         .route("/", get(index))
         .route("/main/*path", get(document_main))
         .route("/documents", get(documents))
+        .route("/side/*id", get(sub_entries))
         .route("/*path", get(document))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
 
-pub async fn documents(
-    mut state: axum::extract::State<State>,
+pub async fn sub_entries(
+    state: axum::extract::State<State>,
+    path: axum::extract::Path<uuid::Uuid>,
 ) -> Result<impl IntoResponse, KnawledgeError> {
-    let documents = state.cache.list()?;
+    let documents = state.db.list_entries(path.0).await?;
 
-    let docs = documents.into_iter().fold(String::new(), |mut acc, d| {
-        if d.file_name.ends_with("index.md") {
-            return acc;
-        }
+    let htmx = documents.into_iter().fold(
+        String::new(),
+        |mut acc,
+         DirectoryEntry {
+             id,
+             name,
+             r#type,
+             title,
+             ..
+         }| {
+            let title = title.unwrap_or_else(|| name.clone());
+            match r#type.as_str() {
+                "f" => {
+                    let _ = write!(acc, "{}", SidebarDocumentHtmx::new(title, id).to_htmx());
+                }
+                "d" => {
+                    let _ = write!(acc, "{}", SidebarDirectoryHtmx::new(title, id).to_htmx());
+                }
+                _ => unreachable!(),
+            }
+            acc
+        },
+    );
 
-        let title = d
-            .title
-            .or(find_title_from_header(&d.content))
-            .unwrap_or_else(|| d.file_name.clone());
+    let mut response = Response::new(htmx);
 
-        let _ = write!(
-            acc,
-            "{}",
-            SidebarDocumentHtmx::new(title, d.file_name).to_htmx()
-        );
+    response.headers_mut().insert(
+        "content-type",
+        HeaderValue::from_static("text/html; charset=utf8"),
+    );
+
+    Ok(response)
+}
+
+pub async fn documents(
+    state: axum::extract::State<State>,
+) -> Result<impl IntoResponse, KnawledgeError> {
+    let documents = state.db.list_roots().await?;
+
+    dbg!(&documents);
+
+    let docs = documents.into_iter().fold(
+        HashMap::new(),
+        |mut acc: HashMap<_, SidebarContainer>,
+         DirectoryEntry {
+             id,
+             name,
+             parent,
+             r#type,
+             title,
+         }| {
+            if name.ends_with("index.md") {
+                return acc;
+            }
+
+            // Root directories have no parent
+            if parent.is_none() {
+                acc.insert(id, SidebarContainer::new(name));
+                return acc;
+            }
+
+            let title = title.unwrap_or_else(|| name.clone());
+            let parent = parent.unwrap();
+
+            // list_roots() returns an ordered list with the roots
+            // always as the first elements
+            let Some(parent) = acc.get_mut(&parent) else {
+                return acc;
+            };
+
+            match r#type.as_str() {
+                "f" => {
+                    parent.documents.push(SidebarDocumentHtmx::new(title, id));
+                }
+                "d" => {
+                    parent
+                        .directories
+                        .push(SidebarDirectoryHtmx::new(title, id));
+                }
+                _ => unreachable!(),
+            }
+
+            acc
+        },
+    );
+
+    let docs = docs.values().fold(String::new(), |mut acc, el| {
+        let _ = write!(acc, "{}", el.to_htmx());
         acc
     });
 
@@ -91,12 +166,13 @@ pub async fn index(
 }
 
 pub async fn document(
-    mut state: axum::extract::State<State>,
-    path: axum::extract::Path<String>,
+    state: axum::extract::State<State>,
+    path: axum::extract::Path<uuid::Uuid>,
 ) -> Result<impl IntoResponse, KnawledgeError> {
     let main = state
-        .cache
-        .get_ref(&path.0)?
+        .db
+        .get_document(path.0)
+        .await?
         .map(|mut doc| {
             doc.content = markdown::to_html_with_options(&doc.content, &Options::gfm()).unwrap();
             MainDocumentHtmx::from(doc).to_htmx()
@@ -116,14 +192,15 @@ pub async fn document(
 }
 
 pub async fn document_main(
-    mut state: axum::extract::State<State>,
-    path: axum::extract::Path<String>,
+    state: axum::extract::State<State>,
+    path: axum::extract::Path<uuid::Uuid>,
 ) -> Result<impl IntoResponse, KnawledgeError> {
     dbg!(&path);
 
     let doc = state
-        .cache
-        .get_ref(&path.0)?
+        .db
+        .get_document(path.0)
+        .await?
         .map(|mut doc| {
             doc.content = markdown::to_html_with_options(&doc.content, &Options::gfm()).unwrap();
             MainDocumentHtmx::from(doc).to_htmx()

@@ -1,8 +1,11 @@
-use state::DocumentCache;
 use std::num::NonZeroUsize;
 use tracing::{info, Level};
 
-use crate::{document::extract_dir, state::State};
+use crate::{
+    db::Database,
+    notifiy::{NotifierHandle, NotifyHandler},
+    state::State,
+};
 
 pub const FILES_PER_THREAD: usize = 128;
 
@@ -14,6 +17,7 @@ pub mod db;
 pub mod document;
 pub mod error;
 pub mod htmx;
+pub mod notifiy;
 pub mod router;
 pub mod state;
 
@@ -32,16 +36,30 @@ async fn main() {
 
     let addr = format!("{host}:{port}");
 
-    let mut state = State::new(&db_url).await;
+    let directories = vec![
+        String::from("content"),
+        String::from("/home/biblius/codium/rusty/biblius-bo/foo"),
+    ];
 
-    let (existing, new) = extract_dir(&state, "content").await.unwrap();
+    let database = Database::new(&db_url).await;
 
-    for file in existing.into_iter() {
-        state.cache.set(file.file_name.clone(), file).unwrap();
-    }
+    let (tx, rx) = std::sync::mpsc::channel();
 
-    for file in new.into_iter() {
-        state.cache.set(file.file_name.clone(), file).unwrap();
+    let notifier = NotifyHandler::new(database.clone(), directories.clone(), rx);
+
+    let handle = notifier.run().expect("could not start watcher");
+
+    let handle = NotifierHandle { tx, handle };
+
+    let mut state = State::new(database, handle).await;
+
+    state.cache_index().await.unwrap();
+
+    for dir in directories {
+        state
+            .process_directory(&dir, None)
+            .await
+            .expect("unable to process directory");
     }
 
     info!("Now listening on {addr}");

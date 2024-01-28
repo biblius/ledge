@@ -19,6 +19,18 @@ pub enum KnawledgeError {
 
     #[error("{0}")]
     NotFound(String),
+
+    #[error("{0}")]
+    Watcher(#[from] notify::Error),
+
+    #[error("{0}")]
+    Sqlx(#[from] sqlx::Error),
+
+    #[error("{0}")]
+    DoesNotExist(String),
+
+    #[error("{0}")]
+    InvalidDirectory(String),
 }
 
 impl IntoResponse for KnawledgeError {
@@ -35,6 +47,14 @@ impl IntoResponse for KnawledgeError {
             }
             KnawledgeError::Utf8(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
             KnawledgeError::NotFound(e) => (StatusCode::NOT_FOUND, e).into_response(),
+            KnawledgeError::Watcher(e) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+            }
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Something went wrong".to_string(),
+            )
+                .into_response(),
         }
     }
 }
