@@ -3,6 +3,7 @@ use tracing::{info, Level};
 
 use crate::{
     db::Database,
+    document::process_directory,
     notifiy::{NotifierHandle, NotifyHandler},
     state::State,
 };
@@ -43,24 +44,23 @@ async fn main() {
 
     let database = Database::new(&db_url).await;
 
+    for dir in directories.iter() {
+        process_directory(&database, dir, None)
+            .await
+            .expect("unable to process directory");
+    }
+
     let (tx, rx) = std::sync::mpsc::channel();
 
-    let notifier = NotifyHandler::new(database.clone(), directories.clone(), rx);
+    let notifier = NotifyHandler::new(database.clone(), directories, rx);
 
     let handle = notifier.run().expect("could not start watcher");
 
     let handle = NotifierHandle { tx, handle };
 
-    let mut state = State::new(database, handle).await;
+    let mut state = State::new(database.clone(), handle).await;
 
     state.cache_index().await.unwrap();
-
-    for dir in directories {
-        state
-            .process_directory(&dir, None)
-            .await
-            .expect("unable to process directory");
-    }
 
     info!("Now listening on {addr}");
 

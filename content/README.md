@@ -1,6 +1,5 @@
 ---
 title: Poor man's guide to Pi
-date: 10 Nov 2024
 tags:
   - foo
   - bar

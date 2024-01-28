@@ -1,5 +1,5 @@
 use crate::{
-    document::{Directory, Document},
+    document::{process_directory, Directory, Document},
     error::KnawledgeError,
 };
 
@@ -180,12 +180,14 @@ impl Database {
 
     pub async fn insert_directory(
         &self,
+        path: &str,
         name: &str,
         parent: Option<uuid::Uuid>,
     ) -> Result<Directory, KnawledgeError> {
         sqlx::query_as!(
             Directory,
-            "INSERT INTO directories(name, parent) VALUES($1, $2) RETURNING *",
+            "INSERT INTO directories(path, name, parent) VALUES($1, $2, $3) RETURNING *",
+            path,
             name,
             parent
         )
@@ -195,6 +197,10 @@ impl Database {
     }
 
     pub async fn update_root(&self, old: &str, new: &str) -> Result<(), KnawledgeError> {
+        sqlx::query!("DELETE FROM directories WHERE path = $1", old)
+            .execute(&self.pool)
+            .await?;
+        process_directory(self, new, None).await?;
         Ok(())
     }
 }

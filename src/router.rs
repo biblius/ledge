@@ -28,16 +28,20 @@ pub fn router(state: State) -> Router {
             get_service(ServeFile::new("public/htmx.min.js")),
         )
         .route("/index.js", get_service(ServeFile::new("public/index.js")))
+        .route(
+            "/favicon.ico",
+            get_service(ServeFile::new("public/favicon.ico")),
+        )
         .route("/", get(index))
         .route("/main/*path", get(document_main))
         .route("/documents", get(documents))
-        .route("/side/*id", get(sub_entries))
+        .route("/side/*id", get(sidebar_entries))
         .route("/*path", get(document))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
 
-pub async fn sub_entries(
+pub async fn sidebar_entries(
     state: axum::extract::State<State>,
     path: axum::extract::Path<uuid::Uuid>,
 ) -> Result<impl IntoResponse, KnawledgeError> {
@@ -81,8 +85,6 @@ pub async fn documents(
     state: axum::extract::State<State>,
 ) -> Result<impl IntoResponse, KnawledgeError> {
     let documents = state.db.list_roots().await?;
-
-    dbg!(&documents);
 
     let docs = documents.into_iter().fold(
         HashMap::new(),
@@ -193,13 +195,33 @@ pub async fn document(
 
 pub async fn document_main(
     state: axum::extract::State<State>,
-    path: axum::extract::Path<uuid::Uuid>,
+    path: axum::extract::Path<String>,
 ) -> Result<impl IntoResponse, KnawledgeError> {
-    dbg!(&path);
+    let uuid = uuid::Uuid::from_slice(path.as_bytes());
 
+    let Ok(uuid) = uuid else {
+        if path.0 == "index" {
+            let index = state
+                .cache
+                .get("index.md")
+                .map(|doc| markdown::to_html_with_options(&doc.content, &Options::gfm()).unwrap())
+                .unwrap_or("Hello world".to_string());
+
+            let mut response = Response::new(index);
+
+            response.headers_mut().insert(
+                "content-type",
+                HeaderValue::from_static("text/html; charset=utf8"),
+            );
+
+            return Ok(response);
+        } else {
+            return Err(KnawledgeError::DoesNotExist(path.0));
+        }
+    };
     let doc = state
         .db
-        .get_document(path.0)
+        .get_document(uuid)
         .await?
         .map(|mut doc| {
             doc.content = markdown::to_html_with_options(&doc.content, &Options::gfm()).unwrap();

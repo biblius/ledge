@@ -25,6 +25,8 @@ CREATE TABLE directories (
 
     parent UUID REFERENCES directories(id) ON DELETE CASCADE ON UPDATE CASCADE,
 
+    path TEXT NOT NULL,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

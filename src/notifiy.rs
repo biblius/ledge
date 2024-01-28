@@ -105,14 +105,10 @@ impl NotifyHandler {
                                 let from = &event.paths[0];
                                 let to = &event.paths[1];
 
-                                dbg!(from, to);
-
                                 for segment in from.iter().rev() {
                                     let Some(segment) = segment.to_str() else {
                                         continue;
                                     };
-
-                                    dbg!(segment);
 
                                     // Attempt to find the root directory of the change and update the db
                                     // entry accodringly
@@ -126,8 +122,6 @@ impl NotifyHandler {
                                 }
 
                                 info!("{} moved to {}", from.display(), to.display());
-
-                                if to.is_dir() {}
                             }
                             e => warn!("Unhandled event: {e:?}"),
                         },

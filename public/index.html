@@ -13,11 +13,11 @@
 
 <body>
     <header>
-        <h1 hx-get="/main/index.md" hx-replace-url="/" hx-target="#main">Knawledger</h1>
+        <h1 hx-get="/main/index" hx-replace-url="/" hx-target="#main">Knawledger</h1>
     </header>
 
     <aside class="sidebar">
-        <h2 hx-get="/main/index.md" hx-replace-url="/" hx-target="#main">Library</h2>
+        <h2 hx-get="/main/index" hx-replace-url="/" hx-target="#main">Library</h2>
         <ul id="sidebar-document-container" hx-trigger="load" hx-get="/documents" hx-swap="innerHTML"></ul>
     </aside>
 
