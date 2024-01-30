@@ -139,10 +139,10 @@ pub struct Directory {
     pub updated_at: DateTime<Utc>,
 }
 
-#[async_recursion(?Send)]
+#[async_recursion]
 pub async fn process_directory(
     db: &Database,
-    path: impl AsRef<Path> + 'async_recursion,
+    path: impl AsRef<Path> + 'async_recursion + Send,
     parent: Option<uuid::Uuid>,
 ) -> Result<(), KnawledgeError> {
     let entries = fs::read_dir(&path)?

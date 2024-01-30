@@ -20,37 +20,46 @@ $$ LANGUAGE plpgsql;
 
 CREATE TABLE directories (
     id UUID PRIMARY KEY NOT NULL DEFAULT uuid_generate_v4(),
-
     name TEXT NOT NULL,
-
-    parent UUID REFERENCES directories(id) ON DELETE CASCADE ON UPDATE CASCADE,
-
     path TEXT NOT NULL,
-
+    parent UUID REFERENCES directories(id) ON DELETE CASCADE ON UPDATE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE documents (
     id UUID PRIMARY KEY NOT NULL DEFAULT uuid_generate_v4(),
-    
-    -- With extension
-    file_name TEXT NOT NULL, 
+    file_name TEXT NOT NULL, -- With extension
     directory UUID NOT NULL REFERENCES directories(id) ON DELETE CASCADE ON UPDATE CASCADE, 
-
-    -- Markdown content
-    content TEXT NOT NULL, 
-
-    -- Meta
-
+    content TEXT NOT NULL, -- Markdown content
     title TEXT,
-    -- Minutes
-    reading_time INT, 
+    reading_time INT, -- Minutes
     tags TEXT,
-
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 SELECT manage_updated_at('directories');
 SELECT manage_updated_at('documents');
+
+CREATE OR REPLACE FUNCTION update_paths_recursive() RETURNS trigger AS $$
+BEGIN
+    IF (
+        NEW.path IS DISTINCT FROM OLD.path
+    ) THEN
+        WITH RECURSIVE 
+        dirs AS 
+            (SELECT id 
+            FROM directories 
+            WHERE id =  NEW.id
+            UNION ALL 
+            SELECT d.id FROM directories d 
+            INNER JOIN dirs
+            ON d.parent = dirs.id) 
+        UPDATE directories SET path = REPLACE(path, NEW.path, 'foo') 
+        WHERE id IN (SELECT id FROM dirs);
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER update_path AFTER UPDATE OF path ON directories FOR EACH ROW EXECUTE FUNCTION update_paths_recursive();

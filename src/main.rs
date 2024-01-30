@@ -1,4 +1,4 @@
-use std::num::NonZeroUsize;
+use std::{collections::HashSet, num::NonZeroUsize};
 use tracing::{info, Level};
 
 use crate::{
@@ -26,9 +26,7 @@ pub mod state;
 async fn main() {
     dotenv::dotenv().ok();
 
-    tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
-        .init();
+    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
 
     let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
 
@@ -52,7 +50,14 @@ async fn main() {
 
     let (tx, rx) = std::sync::mpsc::channel();
 
-    let notifier = NotifyHandler::new(database.clone(), directories, rx);
+    let roots = database
+        .list_root_paths()
+        .await
+        .expect("unable to process roots")
+        .into_iter()
+        .collect::<HashSet<_>>();
+
+    let notifier = NotifyHandler::new(database.clone(), roots, rx);
 
     let handle = notifier.run().expect("could not start watcher");
 

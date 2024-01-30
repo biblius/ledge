@@ -8,6 +8,7 @@ use htmxpress::HtmxElement;
 use markdown::Options;
 use minijinja::context;
 use tower_http::{services::ServeFile, trace::TraceLayer};
+use tracing::info;
 
 use crate::{
     db::DirectoryEntry,
@@ -15,7 +16,7 @@ use crate::{
     htmx::{MainDocumentHtmx, SidebarContainer, SidebarDirectoryHtmx, SidebarDocumentHtmx},
     state::State,
 };
-use std::{collections::HashMap, fmt::Write};
+use std::{collections::HashMap, fmt::Write, str::FromStr};
 
 pub fn router(state: State) -> Router {
     Router::new()
@@ -84,7 +85,7 @@ pub async fn sidebar_entries(
 pub async fn documents(
     state: axum::extract::State<State>,
 ) -> Result<impl IntoResponse, KnawledgeError> {
-    let documents = state.db.list_roots().await?;
+    let documents = state.db.list_roots_with_entries().await?;
 
     let docs = documents.into_iter().fold(
         HashMap::new(),
@@ -197,8 +198,7 @@ pub async fn document_main(
     state: axum::extract::State<State>,
     path: axum::extract::Path<String>,
 ) -> Result<impl IntoResponse, KnawledgeError> {
-    let uuid = uuid::Uuid::from_slice(path.as_bytes());
-
+    let uuid = uuid::Uuid::from_str(&path);
     let Ok(uuid) = uuid else {
         if path.0 == "index" {
             let index = state
@@ -219,6 +219,7 @@ pub async fn document_main(
             return Err(KnawledgeError::DoesNotExist(path.0));
         }
     };
+
     let doc = state
         .db
         .get_document(uuid)

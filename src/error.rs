@@ -2,6 +2,7 @@ use std::{num::ParseIntError, string::FromUtf8Error};
 
 use axum::{http::StatusCode, response::IntoResponse};
 use thiserror::Error;
+use tracing::error;
 
 #[derive(Debug, Error)]
 pub enum KnawledgeError {
@@ -35,6 +36,7 @@ pub enum KnawledgeError {
 
 impl IntoResponse for KnawledgeError {
     fn into_response(self) -> axum::response::Response {
+        error!("Error: {self}");
         match self {
             KnawledgeError::MiniJinja(e) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
@@ -50,11 +52,8 @@ impl IntoResponse for KnawledgeError {
             KnawledgeError::Watcher(e) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
             }
-            _ => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Something went wrong".to_string(),
-            )
-                .into_response(),
+            KnawledgeError::DoesNotExist(e) => (StatusCode::NOT_FOUND, e).into_response(),
+            e => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
         }
     }
 }

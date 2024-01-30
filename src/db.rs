@@ -50,6 +50,43 @@ impl Database {
             .map_err(KnawledgeError::from)
     }
 
+    pub async fn list_root_paths(&self) -> Result<Vec<String>, KnawledgeError> {
+        Ok(
+            sqlx::query!("SELECT path FROM directories WHERE parent IS NULL",)
+                .fetch_all(&self.pool)
+                .await?
+                .into_iter()
+                .map(|el| el.path)
+                .collect(),
+        )
+    }
+
+    pub async fn get_dir_by_path(&self, path: &str) -> Result<Option<Directory>, KnawledgeError> {
+        sqlx::query_as!(Directory, "SELECT * FROM directories WHERE path = $1", path)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(KnawledgeError::from)
+    }
+
+    pub async fn get_root_by_path(&self, path: &str) -> Result<Option<Directory>, KnawledgeError> {
+        sqlx::query_as!(
+            Directory,
+            "SELECT * FROM directories WHERE path = $1 AND parent IS NULL",
+            path
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(KnawledgeError::from)
+    }
+
+    pub async fn nuke_dir(&self, path: &str) -> Result<(), KnawledgeError> {
+        sqlx::query_as!(Directory, "DELETE FROM directories WHERE path = $1", path)
+            .fetch_optional(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(KnawledgeError::from)
+    }
+
     pub async fn list_existing(
         &self,
         directory: uuid::Uuid,
@@ -66,7 +103,7 @@ impl Database {
         .map_err(KnawledgeError::from)
     }
 
-    pub async fn list_roots(&self) -> Result<Vec<DirectoryEntry>, KnawledgeError> {
+    pub async fn list_roots_with_entries(&self) -> Result<Vec<DirectoryEntry>, KnawledgeError> {
         sqlx::query_as_unchecked!(
             DirectoryEntry,
             r#"
@@ -194,6 +231,17 @@ impl Database {
         .fetch_one(&self.pool)
         .await
         .map_err(KnawledgeError::from)
+    }
+
+    pub async fn remove_file(&self, dir: &str, file: &str) -> Result<(), KnawledgeError> {
+        sqlx::query!(
+            "DELETE FROM documents WHERE id = (SELECT id FROM directories WHERE path = $1) AND file_name = $2",
+            dir,
+            file
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     pub async fn update_root(&self, old: &str, new: &str) -> Result<(), KnawledgeError> {
