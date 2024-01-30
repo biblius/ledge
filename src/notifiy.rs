@@ -1,19 +1,16 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fs,
-    path::PathBuf,
     sync::mpsc::{Receiver, Sender},
     time::Duration,
 };
 
-use futures::Future;
 use notify::{
-    event::{AccessKind, CreateKind, ModifyKind, RemoveKind},
-    Event, EventKind, RecommendedWatcher, Watcher,
+    event::{CreateKind, ModifyKind, RemoveKind, RenameMode},
+    EventKind, RecommendedWatcher, Watcher,
 };
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
-use tracing_subscriber::registry::Data;
 
 use crate::{
     db::Database,
@@ -25,7 +22,7 @@ use crate::{
 pub struct NotifyHandler {
     db: Database,
     roots: HashSet<String>,
-    rx: Receiver<NotifierMessage>,
+    _rx: Receiver<NotifierMessage>,
 }
 
 #[derive(Debug)]
@@ -42,7 +39,7 @@ pub enum NotifierMessage {
 
 impl NotifyHandler {
     pub fn new(db: Database, roots: HashSet<String>, rx: Receiver<NotifierMessage>) -> Self {
-        Self { db, roots, rx }
+        Self { db, roots, _rx: rx }
     }
 
     pub fn run(self) -> Result<JoinHandle<()>, KnawledgeError> {
@@ -65,62 +62,100 @@ impl NotifyHandler {
 
             loop {
                 let event = rx.recv().unwrap();
-                match event {
-                    Ok(event) => match event.kind {
-                        EventKind::Create(CreateKind::Folder) => {
-                            debug!("Directory created");
-                            if event.paths.is_empty() {
-                                continue;
-                            }
+
+                if let Err(e) = event {
+                    error!("Error reading inotify event: {e}");
+                    continue;
+                }
+
+                let event = event.unwrap();
+                match event.kind {
+                    EventKind::Create(CreateKind::Folder) => {
+                        debug!("Directory created");
+                        if event.paths.is_empty() {
+                            continue;
                         }
-                        EventKind::Create(CreateKind::File) => {
-                            let path = event.paths[0].display().to_string();
-                            let Some((dir, _)) = path.rsplit_once('/') else {
-                                continue;
-                            };
+                    }
+                    EventKind::Create(CreateKind::File) => {
+                        let path = event.paths[0].display().to_string();
+                        info!("Syncing file {path} with database");
+                        Self::process_file(&self.db, path).await;
+                    }
+                    EventKind::Remove(RemoveKind::File) => {
+                        let path = event.paths[0].display().to_string();
+                        let Some((dir, file)) = path.rsplit_once('/') else {
+                            continue;
+                        };
 
-                            let Ok(Some(dir)) = self.db.get_dir_by_path(dir).await else {
-                                continue;
-                            };
-
-                            let Ok(doc) = Document::read_md_file(dir.id, &path) else {
-                                continue;
-                            };
-
-                            info!("Syncing file {path} with database");
-                            self.db.insert_document(doc).await.unwrap();
+                        info!("Removing {path} from database");
+                        self.db.remove_file(dir, file).await.unwrap();
+                    }
+                    EventKind::Remove(RemoveKind::Folder) => {
+                        if !event.paths.is_empty() {
+                            let path = &event.paths[0];
+                            debug!("Directory removed: {}", path.display());
+                            self.db.nuke_dir(&path.display().to_string()).await.unwrap();
                         }
-                        EventKind::Remove(RemoveKind::File) => {
-                            let path = event.paths[0].display().to_string();
-                            let Some((dir, file)) = path.rsplit_once('/') else {
-                                continue;
-                            };
-
-                            info!("Removing {path} from database");
-                            self.db.remove_file(dir, file).await.unwrap();
-                        }
-                        EventKind::Remove(RemoveKind::Folder) => {
-                            if !event.paths.is_empty() {
-                                let path = &event.paths[0];
-                                debug!("Directory removed: {}", path.display());
-                                self.db.nuke_dir(&path.display().to_string()).await.unwrap();
-                            }
+                    }
+                    EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
+                        if event.paths.is_empty() {
+                            continue;
                         }
 
-                        // Usually comes after saving a file.
-                        EventKind::Access(AccessKind::Close(e)) => {
-                            dbg!(e);
-                        }
-                        EventKind::Modify(ModifyKind::Name(ev)) => match ev {
-                            notify::event::RenameMode::To => {
-                                if event.paths.is_empty() {
+                        let path = &event.paths[0];
+
+                        info!("File moved to {}", path.display());
+
+                        if path.is_dir() {
+                            let path = path.display().to_string();
+                            info!("Syncing directory {path} with database");
+                            let mut path = path.as_str();
+                            while let Some((parent, child)) = path.rsplit_once('/') {
+                                if !self.roots.contains(parent) {
+                                    path = parent;
                                     continue;
                                 }
 
-                                let path = &event.paths[0];
+                                let Some(root) = self.db.get_root_by_path(parent).await.unwrap()
+                                else {
+                                    continue;
+                                };
 
-                                if path.is_dir() {
-                                    let path = path.display().to_string();
+                                process_directory(
+                                    &self.db,
+                                    &format!("{parent}/{child}"),
+                                    Some(root.id),
+                                )
+                                .await
+                                .unwrap();
+
+                                break;
+                            }
+                        } else if path.is_file() {
+                            let path = path.display().to_string();
+                            info!("Syncing file {path} with database");
+                            Self::process_file(&self.db, path).await;
+                        }
+                    }
+                    // Handles removal and addition of files.
+                    EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
+                        if event.paths.is_empty() {
+                            continue;
+                        }
+
+                        let path = event.paths[0].display().to_string();
+
+                        info!("File moved from {path}");
+
+                        match fs::read(&event.paths[0]) {
+                            Ok(_) => {
+                                // In case of roots, rescan whole directory
+                                if self.roots.contains(&path) {
+                                    info!("Adding root {path} to database");
+                                    process_directory(&self.db, path, None).await.unwrap();
+                                // In case of children, find the corresponding root
+                                // and process directories from there to preserve IDs
+                                } else if event.paths[0].is_dir() {
                                     let mut path = path.as_str();
                                     while let Some((parent, child)) = path.rsplit_once('/') {
                                         if !self.roots.contains(parent) {
@@ -144,87 +179,24 @@ impl NotifyHandler {
 
                                         break;
                                     }
+                                // Otherwise insert the file
+                                } else {
+                                    Self::process_file(&self.db, &path).await;
                                 }
-
-                                info!("File moved to {}", event.paths[0].display());
                             }
-
-                            // Handles removal and addition of files.
-                            notify::event::RenameMode::From => {
-                                if event.paths.is_empty() {
+                            Err(_) => {
+                                let Some((dir, file)) = path.rsplit_once('/') else {
                                     continue;
-                                }
+                                };
 
-                                let path = event.paths[0].display().to_string();
+                                info!("Removing file/dir {dir}/{file} from database");
 
-                                info!("Moved file from {path}");
-
-                                // Proceed only if the dir is root
-
-                                match fs::read(&event.paths[0]) {
-                                    Ok(_) => {
-                                        // In case of roots, rescan whole directory
-                                        if self.roots.contains(&path) {
-                                            info!("Adding root {path} to database");
-                                            process_directory(&self.db, path, None).await.unwrap();
-                                        // In case of children, find the corresponding root
-                                        // and process directories from there to preserve IDs
-                                        } else if event.paths[0].is_dir() {
-                                            let mut path = path.as_str();
-                                            while let Some((parent, child)) = path.rsplit_once('/')
-                                            {
-                                                if !self.roots.contains(parent) {
-                                                    path = parent;
-                                                    continue;
-                                                }
-
-                                                let Some(root) =
-                                                    self.db.get_root_by_path(parent).await.unwrap()
-                                                else {
-                                                    continue;
-                                                };
-
-                                                process_directory(
-                                                    &self.db,
-                                                    &format!("{parent}/{child}"),
-                                                    Some(root.id),
-                                                )
-                                                .await
-                                                .unwrap();
-
-                                                break;
-                                            }
-                                        // Otherwise insert the file
-                                        } else {
-                                            Self::process_file(&self.db, &path).await;
-                                        }
-                                    }
-                                    Err(_) => {
-                                        let Some((dir, file)) = path.rsplit_once('/') else {
-                                            continue;
-                                        };
-
-                                        self.db.nuke_dir(&path).await.unwrap();
-
-                                        info!("Removing file/dir {path} from database");
-
-                                        self.db.remove_file(dir, file).await.unwrap();
-                                    }
-                                }
+                                self.db.nuke_dir(&path).await.unwrap();
+                                self.db.remove_file(dir, file).await.unwrap();
                             }
-                            notify::event::RenameMode::Both => {
-                                let from = &event.paths[0];
-                                let to = &event.paths[1];
-
-                                info!("{} moved to {}", from.display(), to.display());
-                            }
-                            e => warn!("Unhandled event: {e:?}"),
-                        },
-                        e => warn!("Unhandled event: {e:?}"),
-                    },
-                    Err(e) => {
-                        error!("Error reading inotify event: {e}")
+                        }
                     }
+                    e => warn!("Unhandled event: {e:?}"),
                 }
             }
         });
@@ -247,7 +219,6 @@ impl NotifyHandler {
             return;
         };
 
-        info!("Syncing file {path} with database");
         db.insert_document(doc).await.unwrap();
     }
 }

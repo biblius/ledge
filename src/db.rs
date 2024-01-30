@@ -235,7 +235,7 @@ impl Database {
 
     pub async fn remove_file(&self, dir: &str, file: &str) -> Result<(), KnawledgeError> {
         sqlx::query!(
-            "DELETE FROM documents WHERE id = (SELECT id FROM directories WHERE path = $1) AND file_name = $2",
+            "DELETE FROM documents WHERE documents.directory IN (SELECT id FROM directories WHERE path = $1) AND file_name = $2",
             dir,
             file
         )

@@ -248,7 +248,9 @@ pub async fn process_directory(
         db.insert_document(file).await?;
     }
 
-    info!("Existing files: {amt_files_existing} Processed files: {amt_files_processed}",);
+    info!(
+        "{full_path} - Existing files: {amt_files_existing} Processed files: {amt_files_processed}",
+    );
 
     Ok(())
 }

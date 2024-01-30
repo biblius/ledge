@@ -1,14 +1,13 @@
 use axum::{
     http::{HeaderValue, Response},
-    response::IntoResponse,
-    routing::{get, get_service},
+    response::{IntoResponse, Redirect},
+    routing::get,
     Router,
 };
 use htmxpress::HtmxElement;
 use markdown::Options;
 use minijinja::context;
-use tower_http::{services::ServeFile, trace::TraceLayer};
-use tracing::info;
+use tower_http::{services::ServeDir, trace::TraceLayer};
 
 use crate::{
     db::DirectoryEntry,
@@ -20,18 +19,10 @@ use std::{collections::HashMap, fmt::Write, str::FromStr};
 
 pub fn router(state: State) -> Router {
     Router::new()
-        .route(
-            "/styles.css",
-            get_service(ServeFile::new("public/styles.css")),
-        )
-        .route(
-            "/htmx.min.js",
-            get_service(ServeFile::new("public/htmx.min.js")),
-        )
-        .route("/index.js", get_service(ServeFile::new("public/index.js")))
+        .nest_service("/public", ServeDir::new("public"))
         .route(
             "/favicon.ico",
-            get_service(ServeFile::new("public/favicon.ico")),
+            get(Redirect::permanent("/public/favicon.ico")),
         )
         .route("/", get(index))
         .route("/main/*path", get(document_main))

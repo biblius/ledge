@@ -35,10 +35,7 @@ async fn main() {
 
     let addr = format!("{host}:{port}");
 
-    let directories = vec![
-        String::from("content"),
-        String::from("/home/biblius/codium/rusty/biblius-bo/foo"),
-    ];
+    let directories = vec![String::from("content"), String::from("foo")];
 
     let database = Database::new(&db_url).await;
 
