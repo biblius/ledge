@@ -1,5 +1,5 @@
 use crate::{
-    document::{process_directory, Directory, Document},
+    document::{Directory, Document},
     error::KnawledgeError,
 };
 
@@ -33,21 +33,23 @@ impl Database {
             .expect("error in migrations")
     }
 
-    pub async fn get_index(&self) -> Result<Option<Document>, KnawledgeError> {
-        sqlx::query_as!(
-            Document,
-            "SELECT * FROM documents WHERE file_name = 'index.md'"
+    pub async fn get_index_path(&self) -> Result<Option<String>, KnawledgeError> {
+        Ok(
+            sqlx::query!("SELECT path FROM documents WHERE file_name = 'index.md'")
+                .fetch_optional(&self.pool)
+                .await?
+                .map(|el| el.path),
         )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(KnawledgeError::from)
     }
 
-    pub async fn get_document(&self, id: uuid::Uuid) -> Result<Option<Document>, KnawledgeError> {
-        sqlx::query_as!(Document, "SELECT * FROM documents WHERE id = $1", id)
+    pub async fn get_document_path(
+        &self,
+        id: uuid::Uuid,
+    ) -> Result<Option<String>, KnawledgeError> {
+        Ok(sqlx::query!("SELECT path FROM documents WHERE id = $1", id)
             .fetch_optional(&self.pool)
-            .await
-            .map_err(KnawledgeError::from)
+            .await?
+            .map(|el| el.path))
     }
 
     pub async fn list_root_paths(&self) -> Result<Vec<String>, KnawledgeError> {
@@ -107,23 +109,23 @@ impl Database {
         sqlx::query_as_unchecked!(
             DirectoryEntry,
             r#"
-            WITH
-            roots AS 
-                (SELECT dir.id, dir.parent, dir.name, 'd' AS type, NULL AS title 
-                FROM directories dir WHERE dir.parent IS NULL),
-            docs AS
-                (SELECT d.id, d.directory AS parent, d.file_name AS name, 'f' AS type, d.title
-                FROM documents d INNER JOIN roots ON d.directory = roots.id),
-            dirs AS
-                (SELECT d.id, d.parent, d.name, 'd' AS type, NULL as title 
-                FROM directories d INNER JOIN roots ON d.parent = roots.id)    
-            SELECT * FROM docs 
-            UNION
-            SELECT * FROM dirs
-            UNION
-            SELECT * FROM roots
-            ORDER BY parent DESC
-            "#
+        WITH
+        roots AS
+        (SELECT dir.id, dir.parent, dir.name, 'd' AS type, NULL AS title
+        FROM directories dir WHERE dir.parent IS NULL),
+        docs AS
+        (SELECT d.id, d.directory AS parent, d.file_name AS name, 'f' AS type, d.title
+        FROM documents d INNER JOIN roots ON d.directory = roots.id),
+        dirs AS
+        (SELECT d.id, d.parent, d.name, 'd' AS type, NULL as title
+        FROM directories d INNER JOIN roots ON d.parent = roots.id)
+        SELECT * FROM docs
+        UNION
+        SELECT * FROM dirs
+        UNION
+        SELECT * FROM roots
+        ORDER BY parent DESC
+        "#
         )
         .fetch_all(&self.pool)
         .await
@@ -137,16 +139,16 @@ impl Database {
         sqlx::query_as_unchecked!(
             DirectoryEntry,
             r#"
-            SELECT 
-                doc.id, dir.id AS parent, doc.file_name AS name, 'f' AS type, doc.title 
-                FROM documents doc 
-            INNER JOIN directories dir 
-                ON doc.directory = dir.id 
-                AND dir.id = $1 
-            UNION 
-            SELECT id, parent, name, 'd' AS type, NULL AS title 
-            FROM directories WHERE parent = $1
-            "#,
+        SELECT
+        doc.id, dir.id AS parent, doc.file_name AS name, 'f' AS type, doc.title
+        FROM documents doc
+        INNER JOIN directories dir
+        ON doc.directory = dir.id
+        AND dir.id = $1
+        UNION
+        SELECT id, parent, name, 'd' AS type, NULL AS title
+        FROM directories WHERE parent = $1
+        "#,
             id
         )
         .fetch_all(&self.pool)
@@ -159,23 +161,19 @@ impl Database {
             id,
             file_name,
             directory,
-            content,
+            path,
             title,
-            reading_time,
-            tags,
             created_at,
             updated_at,
         } = document;
 
         sqlx::query!(
-            "INSERT INTO documents VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING",
+            "INSERT INTO documents VALUES($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
             id,
             file_name,
             directory,
-            content,
+            path,
             title,
-            reading_time,
-            tags,
             created_at,
             updated_at
         )
@@ -241,14 +239,6 @@ impl Database {
         )
         .execute(&self.pool)
         .await?;
-        Ok(())
-    }
-
-    pub async fn update_root(&self, old: &str, new: &str) -> Result<(), KnawledgeError> {
-        sqlx::query!("DELETE FROM directories WHERE path = $1", old)
-            .execute(&self.pool)
-            .await?;
-        process_directory(self, new, None).await?;
         Ok(())
     }
 }

@@ -11,6 +11,7 @@ use tower_http::{services::ServeDir, trace::TraceLayer};
 
 use crate::{
     db::DirectoryEntry,
+    document::Document,
     error::KnawledgeError,
     htmx::{MainDocumentHtmx, SidebarContainer, SidebarDirectoryHtmx, SidebarDocumentHtmx},
     state::State,
@@ -144,7 +145,7 @@ pub async fn index(
     let main = state
         .cache
         .get("index.md")
-        .map(|doc| markdown::to_html_with_options(&doc.content, &Options::gfm()).unwrap())
+        .map(|doc| markdown::to_html_with_options(&doc.file_name, &Options::gfm()).unwrap())
         .unwrap_or("Hello world".to_string());
 
     let template = state.context.get_template("index")?;
@@ -165,9 +166,10 @@ pub async fn document(
 ) -> Result<impl IntoResponse, KnawledgeError> {
     let main = state
         .db
-        .get_document(path.0)
+        .get_document_path(path.0)
         .await?
-        .map(|mut doc| {
+        .map(|doc| {
+            let mut doc = Document::collect_data(doc).unwrap();
             doc.content = markdown::to_html_with_options(&doc.content, &Options::gfm()).unwrap();
             MainDocumentHtmx::from(doc).to_htmx()
         })
@@ -195,7 +197,7 @@ pub async fn document_main(
             let index = state
                 .cache
                 .get("index.md")
-                .map(|doc| markdown::to_html_with_options(&doc.content, &Options::gfm()).unwrap())
+                .map(|doc| markdown::to_html_with_options(&doc.file_name, &Options::gfm()).unwrap())
                 .unwrap_or("Hello world".to_string());
 
             let mut response = Response::new(index);
@@ -213,9 +215,10 @@ pub async fn document_main(
 
     let doc = state
         .db
-        .get_document(uuid)
+        .get_document_path(uuid)
         .await?
-        .map(|mut doc| {
+        .map(|doc| {
+            let mut doc = Document::collect_data(doc).unwrap();
             doc.content = markdown::to_html_with_options(&doc.content, &Options::gfm()).unwrap();
             MainDocumentHtmx::from(doc).to_htmx()
         })

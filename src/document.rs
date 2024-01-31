@@ -1,5 +1,6 @@
 use async_recursion::async_recursion;
-use sqlx::types::chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc};
+use serde::Deserialize;
 use tracing::{debug, error, info};
 
 use crate::db::Database;
@@ -12,6 +13,23 @@ use std::thread::ScopedJoinHandle;
 use std::time::Instant;
 use std::{fmt::Debug, path::Path};
 
+/// Document read from the fs with its metadata.
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct DocumentData {
+    /// Document markdown content
+    #[serde(skip)]
+    pub content: String,
+
+    pub title: Option<String>,
+
+    pub reading_time: Option<i32>,
+
+    pub tags: Option<Vec<String>>,
+
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+/// Database model
 #[derive(Debug, Default, Clone)]
 pub struct Document {
     pub id: uuid::Uuid,
@@ -22,110 +40,84 @@ pub struct Document {
     /// Full path starting from the initial registered dir
     pub directory: uuid::Uuid,
 
-    /// Document markdown content
-    pub content: String,
+    pub path: String,
+
+    pub title: Option<String>,
 
     pub created_at: DateTime<Utc>,
 
     pub updated_at: DateTime<Utc>,
-
-    pub title: Option<String>,
-
-    pub reading_time: Option<i32>,
-
-    pub tags: Option<String>,
 }
 
 impl Document {
-    pub fn read_md_file(
-        directory: uuid::Uuid,
-        path: impl AsRef<Path>,
-    ) -> Result<Self, KnawledgeError> {
-        debug!("Processing {}", path.as_ref().display());
+    pub fn new(directory: uuid::Uuid, name: String, path: String) -> Result<Self, KnawledgeError> {
+        debug!("Processing {path}");
 
-        let file_name = path
-            .as_ref()
-            .file_name()
-            .unwrap_or(OsStr::new("__unknown"))
-            .to_str()
-            .unwrap_or("__unknown")
-            .to_string();
+        let data = Document::collect_data(&path)?;
 
-        let mut document = Self {
+        let document = Self {
             id: uuid::Uuid::new_v4(),
-            file_name,
+            file_name: name,
             directory,
+            path,
+            title: data.title,
             created_at: Utc::now(),
             updated_at: Utc::now(),
-            ..Default::default()
         };
-
-        let content = std::fs::read_to_string(&path)?;
-
-        document.collect_metadata(content);
 
         Ok(document)
     }
 
-    fn collect_metadata(&mut self, content: String) {
+    pub fn name(path: impl AsRef<Path>) -> String {
+        path.as_ref()
+            .file_name()
+            .unwrap_or(OsStr::new("__unknown"))
+            .to_str()
+            .unwrap_or("__unknown")
+            .to_string()
+    }
+
+    pub fn collect_data(path: impl AsRef<Path>) -> Result<DocumentData, KnawledgeError> {
+        let mut data = DocumentData::default();
+
+        let content = fs::read_to_string(path)?;
+        data.title = find_title_from_h1(&content);
+
         if !content.starts_with("---") {
-            return self.content = content;
+            data.content = content;
+            return Ok(data);
         }
 
         if content.len() < 4 {
-            return self.content = content;
+            data.content = content;
+            return Ok(data);
         }
 
         let Some(end_i) = &content[3..].find("---") else {
-            return self.content = content[3..].to_string();
+            data.content = content[3..].to_string();
+            return Ok(data);
         };
 
         // Offset to account for the skipped ---
         let meta_str = &content[3..*end_i + 2];
 
         if meta_str.is_empty() {
-            return self.content = content[end_i + 6..].to_string();
+            data.content = content[end_i + 6..].to_string();
+            return Ok(data);
         }
 
-        let mut in_tags = false;
-
-        for line in meta_str.lines() {
-            let line = line.trim();
-
-            if in_tags && !line.starts_with('-') {
-                in_tags = false;
-            }
-
-            if in_tags {
-                let Some((_, tag)) = line.split_once('-') else {
-                    continue;
-                };
-                self.tags.as_mut().unwrap().push_str(tag.trim());
-                self.tags.as_mut().unwrap().push(',');
-                continue;
-            }
-
-            if line.starts_with("tags") {
-                self.tags = Some(String::new());
-                in_tags = true;
-                continue;
-            }
-
-            if line.starts_with("title") {
-                if let Some(title) = read_meta_line("title", line) {
-                    self.title = Some(title);
-                }
-            }
-        }
+        data = serde_yaml::from_str(meta_str)?;
 
         let content = &content[end_i + 6..];
-        self.reading_time = Some(calculate_reading_time(content));
 
-        self.content = content.to_string();
+        data.content = content.to_string();
+        data.reading_time = Some(calculate_reading_time(content));
 
-        if self.title.is_none() {
-            self.title = find_title_from_h1(content);
+        if data.title.is_none() {
+            data.title = find_title_from_h1(content);
         }
+
+        Ok(data)
     }
 }
 
@@ -307,7 +299,11 @@ fn process_files(
                     let task = scope.spawn(move || {
                         let mut files = vec![];
                         for file_path in batch {
-                            let file = Document::read_md_file(directory, file_path)?;
+                            let file = Document::new(
+                                directory,
+                                Document::name(file_path),
+                                file_path.display().to_string(),
+                            )?;
                             files.push(file);
                         }
                         Ok(files)
@@ -338,7 +334,11 @@ fn process_files(
         } else {
             debug!("Processing single batch");
             for file_path in batches[0] {
-                let file = Document::read_md_file(directory, file_path)?;
+                let file = Document::new(
+                    directory,
+                    Document::name(file_path),
+                    file_path.display().to_string(),
+                )?;
                 files.push(file);
             }
         }
@@ -350,13 +350,11 @@ fn process_files(
 pub fn find_title_from_h1(content: &str) -> Option<String> {
     for line in content.lines() {
         let line = line.trim();
-        if line.starts_with('#') {
-            let Some((_, title)) = line.split_once('#') else {
-                continue;
-            };
+        let Some((_, title)) = line.split_once('#') else {
+            continue;
+        };
 
-            return Some(title.trim().to_string());
-        }
+        return Some(title.trim().to_string());
     }
 
     None
@@ -365,10 +363,4 @@ pub fn find_title_from_h1(content: &str) -> Option<String> {
 fn calculate_reading_time(content: &str) -> i32 {
     let words = content.split(' ').collect::<Vec<_>>().len();
     ((words / 200) as f32 * 0.60) as i32
-}
-
-fn read_meta_line(tag: &str, input: &str) -> Option<String> {
-    input
-        .split_once(&format!("{tag}:"))
-        .map(|(_, val)| val.trim().to_string())
 }

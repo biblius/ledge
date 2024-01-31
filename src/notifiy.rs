@@ -207,7 +207,7 @@ impl NotifyHandler {
     async fn process_file(db: &Database, path: impl AsRef<str> + Send + Sync) {
         let path = path.as_ref();
 
-        let Some((dir, _)) = path.rsplit_once('/') else {
+        let Some((dir, name)) = path.rsplit_once('/') else {
             return;
         };
 
@@ -215,7 +215,7 @@ impl NotifyHandler {
             return;
         };
 
-        let Ok(doc) = Document::read_md_file(dir.id, path) else {
+        let Ok(doc) = Document::new(dir.id, name.to_string(), path.to_string()) else {
             return;
         };
 

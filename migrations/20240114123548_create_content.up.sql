@@ -31,10 +31,8 @@ CREATE TABLE documents (
     id UUID PRIMARY KEY NOT NULL DEFAULT uuid_generate_v4(),
     file_name TEXT NOT NULL, -- With extension
     directory UUID NOT NULL REFERENCES directories(id) ON DELETE CASCADE ON UPDATE CASCADE, 
-    content TEXT NOT NULL, -- Markdown content
-    title TEXT,
-    reading_time INT, -- Minutes
-    tags TEXT,
+    path TEXT NOT NULL,
+    title TEXT, -- Temporary title obtained from h1, overriden by meta title
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

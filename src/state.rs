@@ -37,9 +37,9 @@ impl State {
     }
 
     pub async fn cache_index(&mut self) -> Result<(), KnawledgeError> {
-        let index = self.db.get_index().await?;
+        let index = self.db.get_index_path().await?;
         if let Some(index) = index {
-            self.cache.set("index.md".to_string(), index)?;
+            // self.cache.set("index.md".to_string(), index)?;
         }
         Ok(())
     }

@@ -32,6 +32,9 @@ pub enum KnawledgeError {
 
     #[error("{0}")]
     InvalidDirectory(String),
+
+    #[error("{0}")]
+    SerdeYaml(#[from] serde_yaml::Error),
 }
 
 impl IntoResponse for KnawledgeError {

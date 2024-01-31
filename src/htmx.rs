@@ -1,4 +1,4 @@
-use crate::document::Document;
+use crate::document::DocumentData;
 
 #[derive(Debug, htmxpress::Element)]
 pub struct MainDocumentHtmx {
@@ -10,28 +10,21 @@ pub struct MainDocumentHtmx {
     pub content: String,
 }
 
-impl From<Document> for MainDocumentHtmx {
-    fn from(value: Document) -> Self {
-        let Document {
+impl From<DocumentData> for MainDocumentHtmx {
+    fn from(value: DocumentData) -> Self {
+        let DocumentData {
             content,
-            created_at,
             reading_time,
             tags,
+            created_at,
             ..
-        }: Document = value;
+        } = value;
         Self {
-            // Last property to get mapped, so if this is not here
-            // we know there's not meta for the document
             meta: reading_time.map(|reading_time| DocumentHeaderInfo {
                 reading_time,
                 tags_p: "Tags:",
-                date: created_at.to_string(),
-                tags: tags.map(|tags| DocumentTags {
-                    tags: tags
-                        .split(',')
-                        .filter_map(|e| (!e.is_empty()).then_some(e.to_string()))
-                        .collect(),
-                }),
+                date: created_at.map(|c| c.to_string()),
+                tags: tags.map(|tags| DocumentTags { tags }),
             }),
             content,
         }
@@ -117,7 +110,7 @@ pub struct DocumentHeaderInfo {
 
     #[element("p")]
     #[format("Created: {}")]
-    date: String,
+    date: Option<String>,
 
     #[element("p")]
     tags_p: &'static str,
