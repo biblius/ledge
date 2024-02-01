@@ -53,7 +53,7 @@ impl Document {
     pub fn new(directory: uuid::Uuid, name: String, path: String) -> Result<Self, KnawledgeError> {
         debug!("Processing {path}");
 
-        let data = Document::collect_data(&path)?;
+        let data = Document::read_from_disk(&path)?;
 
         let document = Self {
             id: uuid::Uuid::new_v4(),
@@ -77,7 +77,7 @@ impl Document {
             .to_string()
     }
 
-    pub fn collect_data(path: impl AsRef<Path>) -> Result<DocumentData, KnawledgeError> {
+    pub fn read_from_disk(path: impl AsRef<Path>) -> Result<DocumentData, KnawledgeError> {
         let mut data = DocumentData::default();
 
         let content = fs::read_to_string(path)?;
@@ -301,7 +301,7 @@ fn process_files(
                         for file_path in batch {
                             let file = Document::new(
                                 directory,
-                                Document::name(file_path),
+                                Document::name(file_path.canonicalize()?),
                                 file_path.display().to_string(),
                             )?;
                             files.push(file);
@@ -337,7 +337,7 @@ fn process_files(
                 let file = Document::new(
                     directory,
                     Document::name(file_path),
-                    file_path.display().to_string(),
+                    file_path.canonicalize()?.display().to_string(),
                 )?;
                 files.push(file);
             }

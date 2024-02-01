@@ -35,7 +35,7 @@ impl Database {
 
     pub async fn get_index_path(&self) -> Result<Option<String>, KnawledgeError> {
         Ok(
-            sqlx::query!("SELECT path FROM documents WHERE file_name = 'index.md'")
+            sqlx::query!("SELECT path FROM documents WHERE file_name = 'index.md' LIMIT 1")
                 .fetch_optional(&self.pool)
                 .await?
                 .map(|el| el.path),
@@ -231,14 +231,10 @@ impl Database {
         .map_err(KnawledgeError::from)
     }
 
-    pub async fn remove_file(&self, dir: &str, file: &str) -> Result<(), KnawledgeError> {
-        sqlx::query!(
-            "DELETE FROM documents WHERE documents.directory IN (SELECT id FROM directories WHERE path = $1) AND file_name = $2",
-            dir,
-            file
-        )
-        .execute(&self.pool)
-        .await?;
+    pub async fn remove_file(&self, path: &str) -> Result<(), KnawledgeError> {
+        sqlx::query!("DELETE FROM documents WHERE path = $1", path)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 }

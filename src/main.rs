@@ -60,9 +60,7 @@ async fn main() {
 
     let handle = NotifierHandle { tx, handle };
 
-    let mut state = State::new(database.clone(), handle).await;
-
-    state.cache_index().await.unwrap();
+    let state = State::new(database.clone(), handle).await;
 
     info!("Now listening on {addr}");
 

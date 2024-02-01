@@ -1,7 +1,10 @@
 use std::{
     collections::HashSet,
     fs,
-    sync::mpsc::{Receiver, Sender},
+    sync::{
+        mpsc::{Receiver, Sender},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
@@ -60,8 +63,16 @@ impl NotifyHandler {
 
             info!("Notifier runtime spawned");
 
+            let rx = Arc::new(Mutex::new(rx));
             loop {
-                let event = rx.recv().unwrap();
+                let rx = rx.clone();
+                let event = tokio::task::spawn_blocking(move || rx.lock().unwrap().recv()).await;
+
+                if event.is_err() {
+                    continue;
+                }
+
+                let event = event.unwrap().unwrap();
 
                 if let Err(e) = event {
                     error!("Error reading inotify event: {e}");
@@ -69,33 +80,37 @@ impl NotifyHandler {
                 }
 
                 let event = event.unwrap();
+
                 match event.kind {
                     EventKind::Create(CreateKind::Folder) => {
-                        debug!("Directory created");
                         if event.paths.is_empty() {
                             continue;
                         }
+                        debug!("Directory created: {}", event.paths[0].display());
                     }
                     EventKind::Create(CreateKind::File) => {
+                        if event.paths.is_empty() {
+                            continue;
+                        }
                         let path = event.paths[0].display().to_string();
                         info!("Syncing file {path} with database");
                         Self::process_file(&self.db, path).await;
                     }
                     EventKind::Remove(RemoveKind::File) => {
-                        let path = event.paths[0].display().to_string();
-                        let Some((dir, file)) = path.rsplit_once('/') else {
+                        if event.paths.is_empty() {
                             continue;
-                        };
-
+                        }
+                        let path = event.paths[0].display().to_string();
                         info!("Removing {path} from database");
-                        self.db.remove_file(dir, file).await.unwrap();
+                        self.db.remove_file(&path).await.unwrap();
                     }
                     EventKind::Remove(RemoveKind::Folder) => {
-                        if !event.paths.is_empty() {
-                            let path = &event.paths[0];
-                            debug!("Directory removed: {}", path.display());
-                            self.db.nuke_dir(&path.display().to_string()).await.unwrap();
+                        if event.paths.is_empty() {
+                            continue;
                         }
+                        let path = &event.paths[0];
+                        debug!("Directory removed: {}", path.display());
+                        self.db.nuke_dir(&path.display().to_string()).await.unwrap();
                     }
                     EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
                         if event.paths.is_empty() {
@@ -185,14 +200,10 @@ impl NotifyHandler {
                                 }
                             }
                             Err(_) => {
-                                let Some((dir, file)) = path.rsplit_once('/') else {
-                                    continue;
-                                };
-
-                                info!("Removing file/dir {dir}/{file} from database");
+                                info!("Removing file/dir {path} from database");
 
                                 self.db.nuke_dir(&path).await.unwrap();
-                                self.db.remove_file(dir, file).await.unwrap();
+                                self.db.remove_file(&path).await.unwrap();
                             }
                         }
                     }
@@ -215,6 +226,7 @@ impl NotifyHandler {
             return;
         };
 
+        // Here we already have the canonicalized path
         let Ok(doc) = Document::new(dir.id, name.to_string(), path.to_string()) else {
             return;
         };

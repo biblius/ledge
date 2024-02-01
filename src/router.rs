@@ -8,6 +8,7 @@ use htmxpress::HtmxElement;
 use markdown::Options;
 use minijinja::context;
 use tower_http::{services::ServeDir, trace::TraceLayer};
+use tracing::info;
 
 use crate::{
     db::DirectoryEntry,
@@ -142,12 +143,15 @@ pub async fn documents(
 pub async fn index(
     state: axum::extract::State<State>,
 ) -> Result<impl IntoResponse, KnawledgeError> {
-    let main = state
-        .cache
-        .get("index.md")
-        .map(|doc| markdown::to_html_with_options(&doc.file_name, &Options::gfm()).unwrap())
-        .unwrap_or("Hello world".to_string());
+    info!("Loading index");
 
+    let doc_path = state.db.get_index_path().await?;
+    let Some(path) = doc_path else {
+        return Ok(Response::new(String::from("Hello world")));
+    };
+
+    let index = Document::read_from_disk(path)?;
+    let main = markdown::to_html_with_options(&index.content, &Options::gfm()).unwrap();
     let template = state.context.get_template("index")?;
     let main = template.render(context! {main => main})?;
     let mut response = Response::new(main);
@@ -164,20 +168,21 @@ pub async fn document(
     state: axum::extract::State<State>,
     path: axum::extract::Path<uuid::Uuid>,
 ) -> Result<impl IntoResponse, KnawledgeError> {
-    let main = state
-        .db
-        .get_document_path(path.0)
-        .await?
-        .map(|doc| {
-            let mut doc = Document::collect_data(doc).unwrap();
-            doc.content = markdown::to_html_with_options(&doc.content, &Options::gfm()).unwrap();
-            MainDocumentHtmx::from(doc).to_htmx()
-        })
-        .unwrap_or("Hello world".to_string());
+    let doc_path = state.db.get_document_path(path.0).await?;
 
+    let Some(path) = doc_path else {
+        return Err(KnawledgeError::NotFound(path.0.to_string()));
+    };
+
+    info!("Reading {path}");
+
+    let mut doc = Document::read_from_disk(path)?;
+    doc.content = markdown::to_html_with_options(&doc.content, &Options::gfm()).unwrap();
+
+    let main = MainDocumentHtmx::from(doc).to_htmx();
     let template = state.context.get_template("index")?;
-    let main = template.render(context! {main => main})?;
-    let mut response = Response::new(main);
+    let response = template.render(context! {main => main})?;
+    let mut response = Response::new(response);
 
     response.headers_mut().insert(
         "content-type",
@@ -194,11 +199,12 @@ pub async fn document_main(
     let uuid = uuid::Uuid::from_str(&path);
     let Ok(uuid) = uuid else {
         if path.0 == "index" {
-            let index = state
-                .cache
-                .get("index.md")
-                .map(|doc| markdown::to_html_with_options(&doc.file_name, &Options::gfm()).unwrap())
-                .unwrap_or("Hello world".to_string());
+            let Some(path) = state.db.get_index_path().await? else {
+                return Ok(Response::new(String::from("Hello world")));
+            };
+
+            let index = Document::read_from_disk(path)?;
+            let index = markdown::to_html_with_options(&index.content, &Options::gfm()).unwrap();
 
             let mut response = Response::new(index);
 
@@ -217,8 +223,9 @@ pub async fn document_main(
         .db
         .get_document_path(uuid)
         .await?
-        .map(|doc| {
-            let mut doc = Document::collect_data(doc).unwrap();
+        .map(|path| {
+            info!("Reading {path}");
+            let mut doc = Document::read_from_disk(path).unwrap();
             doc.content = markdown::to_html_with_options(&doc.content, &Options::gfm()).unwrap();
             MainDocumentHtmx::from(doc).to_htmx()
         })
