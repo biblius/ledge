@@ -2,19 +2,13 @@ use crate::{
     document::{Directory, Document},
     error::KnawledgeError,
 };
+use models::DirectoryEntry;
+
+pub mod models;
 
 #[derive(Debug, Clone)]
 pub struct Database {
     pool: sqlx::PgPool,
-}
-
-#[derive(Debug)]
-pub struct DirectoryEntry {
-    pub id: uuid::Uuid,
-    pub name: String,
-    pub parent: Option<uuid::Uuid>,
-    pub r#type: String,
-    pub title: Option<String>,
 }
 
 impl Database {
@@ -31,6 +25,53 @@ impl Database {
             .run(&self.pool)
             .await
             .expect("error in migrations")
+    }
+
+    pub async fn insert_directory(
+        &self,
+        path: &str,
+        name: &str,
+        parent: Option<uuid::Uuid>,
+    ) -> Result<Directory, KnawledgeError> {
+        sqlx::query_as!(
+            Directory,
+            "INSERT INTO directories(path, name, parent) VALUES($1, $2, $3) RETURNING *",
+            path,
+            name,
+            parent
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(KnawledgeError::from)
+    }
+
+    pub async fn insert_document(&self, document: Document) -> Result<(), KnawledgeError> {
+        let Document {
+            id,
+            file_name,
+            directory,
+            path,
+            title,
+            custom_id,
+            created_at,
+            updated_at,
+        } = document;
+
+        sqlx::query!(
+            "INSERT INTO documents VALUES($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
+            id,
+            file_name,
+            directory,
+            path,
+            title,
+            custom_id,
+            created_at,
+            updated_at
+        )
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(KnawledgeError::from)
     }
 
     pub async fn get_index_path(&self) -> Result<Option<String>, KnawledgeError> {
@@ -50,6 +91,18 @@ impl Database {
             .fetch_optional(&self.pool)
             .await?
             .map(|el| el.path))
+    }
+
+    pub async fn get_document_path_by_custom_id(
+        &self,
+        custom_id: &str,
+    ) -> Result<Option<String>, KnawledgeError> {
+        Ok(
+            sqlx::query!("SELECT path FROM documents WHERE custom_id = $1", custom_id)
+                .fetch_optional(&self.pool)
+                .await?
+                .map(|el| el.path),
+        )
     }
 
     pub async fn list_root_paths(&self) -> Result<Vec<String>, KnawledgeError> {
@@ -81,14 +134,6 @@ impl Database {
         .map_err(KnawledgeError::from)
     }
 
-    pub async fn nuke_dir(&self, path: &str) -> Result<(), KnawledgeError> {
-        sqlx::query_as!(Directory, "DELETE FROM directories WHERE path = $1", path)
-            .fetch_optional(&self.pool)
-            .await
-            .map(|_| ())
-            .map_err(KnawledgeError::from)
-    }
-
     pub async fn list_existing(
         &self,
         directory: uuid::Uuid,
@@ -109,22 +154,22 @@ impl Database {
         sqlx::query_as_unchecked!(
             DirectoryEntry,
             r#"
-        WITH
-        roots AS
-        (SELECT dir.id, dir.parent, dir.name, 'd' AS type, NULL AS title
-        FROM directories dir WHERE dir.parent IS NULL),
-        docs AS
-        (SELECT d.id, d.directory AS parent, d.file_name AS name, 'f' AS type, d.title
-        FROM documents d INNER JOIN roots ON d.directory = roots.id),
-        dirs AS
-        (SELECT d.id, d.parent, d.name, 'd' AS type, NULL as title
-        FROM directories d INNER JOIN roots ON d.parent = roots.id)
-        SELECT * FROM docs
-        UNION
-        SELECT * FROM dirs
-        UNION
-        SELECT * FROM roots
-        ORDER BY parent DESC
+                WITH
+                roots AS
+                    (SELECT dir.id, dir.parent, dir.name, 'd' AS type, NULL AS title, NULL AS custom_id
+                    FROM directories dir WHERE dir.parent IS NULL),
+                docs AS
+                    (SELECT d.id, d.directory AS parent, d.file_name AS name, 'f' AS type, d.title, d.custom_id
+                    FROM documents d INNER JOIN roots ON d.directory = roots.id),
+                dirs AS
+                    (SELECT d.id, d.parent, d.name, 'd' AS type, NULL as title, NULL AS custom_id
+                    FROM directories d INNER JOIN roots ON d.parent = roots.id)
+                SELECT * FROM docs
+                UNION
+                SELECT * FROM dirs
+                UNION
+                SELECT * FROM roots
+                ORDER BY parent DESC
         "#
         )
         .fetch_all(&self.pool)
@@ -139,47 +184,18 @@ impl Database {
         sqlx::query_as_unchecked!(
             DirectoryEntry,
             r#"
-        SELECT
-        doc.id, dir.id AS parent, doc.file_name AS name, 'f' AS type, doc.title
-        FROM documents doc
-        INNER JOIN directories dir
-        ON doc.directory = dir.id
-        AND dir.id = $1
-        UNION
-        SELECT id, parent, name, 'd' AS type, NULL AS title
-        FROM directories WHERE parent = $1
+                SELECT doc.id, dir.id AS parent, doc.file_name AS name, 'f' AS type, doc.title, doc.custom_id
+                FROM documents doc
+                INNER JOIN directories dir
+                ON doc.directory = dir.id AND dir.id = $1
+                UNION
+                SELECT id, parent, name, 'd' AS type, NULL AS title, NULL AS custom_id
+                FROM directories WHERE parent = $1
         "#,
             id
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(KnawledgeError::from)
-    }
-
-    pub async fn insert_document(&self, document: Document) -> Result<(), KnawledgeError> {
-        let Document {
-            id,
-            file_name,
-            directory,
-            path,
-            title,
-            created_at,
-            updated_at,
-        } = document;
-
-        sqlx::query!(
-            "INSERT INTO documents VALUES($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
-            id,
-            file_name,
-            directory,
-            path,
-            title,
-            created_at,
-            updated_at
-        )
-        .execute(&self.pool)
-        .await
-        .map(|_| ())
         .map_err(KnawledgeError::from)
     }
 
@@ -213,22 +229,12 @@ impl Database {
         .map_err(KnawledgeError::from)
     }
 
-    pub async fn insert_directory(
-        &self,
-        path: &str,
-        name: &str,
-        parent: Option<uuid::Uuid>,
-    ) -> Result<Directory, KnawledgeError> {
-        sqlx::query_as!(
-            Directory,
-            "INSERT INTO directories(path, name, parent) VALUES($1, $2, $3) RETURNING *",
-            path,
-            name,
-            parent
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(KnawledgeError::from)
+    pub async fn remove_dir(&self, path: &str) -> Result<(), KnawledgeError> {
+        sqlx::query_as!(Directory, "DELETE FROM directories WHERE path = $1", path)
+            .fetch_optional(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(KnawledgeError::from)
     }
 
     pub async fn remove_file(&self, path: &str) -> Result<(), KnawledgeError> {

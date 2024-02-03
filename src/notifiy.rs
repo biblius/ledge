@@ -110,7 +110,10 @@ impl NotifyHandler {
                         }
                         let path = &event.paths[0];
                         debug!("Directory removed: {}", path.display());
-                        self.db.nuke_dir(&path.display().to_string()).await.unwrap();
+                        self.db
+                            .remove_dir(&path.display().to_string())
+                            .await
+                            .unwrap();
                     }
                     EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
                         if event.paths.is_empty() {
@@ -162,7 +165,7 @@ impl NotifyHandler {
 
                         info!("File moved from {path}");
 
-                        match fs::read(&event.paths[0]) {
+                        match fs::metadata(&event.paths[0]) {
                             Ok(_) => {
                                 // In case of roots, rescan whole directory
                                 if self.roots.contains(&path) {
@@ -202,7 +205,7 @@ impl NotifyHandler {
                             Err(_) => {
                                 info!("Removing file/dir {path} from database");
 
-                                self.db.nuke_dir(&path).await.unwrap();
+                                self.db.remove_dir(&path).await.unwrap();
                                 self.db.remove_file(&path).await.unwrap();
                             }
                         }

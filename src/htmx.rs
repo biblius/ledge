@@ -1,4 +1,4 @@
-use crate::document::DocumentData;
+use crate::document::{DocumentData, DocumentMeta};
 
 #[derive(Debug, htmxpress::Element)]
 pub struct MainDocumentHtmx {
@@ -14,17 +14,20 @@ impl From<DocumentData> for MainDocumentHtmx {
     fn from(value: DocumentData) -> Self {
         let DocumentData {
             content,
-            reading_time,
-            tags,
-            created_at,
-            ..
+            meta:
+                DocumentMeta {
+                    reading_time,
+                    tags,
+                    created_at,
+                    ..
+                },
         } = value;
         Self {
             meta: reading_time.map(|reading_time| DocumentHeaderInfo {
                 reading_time,
                 tags_p: "Tags:",
                 date: created_at.map(|c| c.to_string()),
-                tags: tags.map(|tags| DocumentTags { tags }),
+                tags: tags.map(|tags| (DocumentTags { tags })),
             }),
             content,
         }
@@ -64,11 +67,11 @@ pub struct SidebarDocumentHtmx {
     #[element("h2")]
     pub title: String,
 
-    pub path: uuid::Uuid,
+    pub path: String,
 }
 
 impl SidebarDocumentHtmx {
-    pub fn new(title: String, path: uuid::Uuid) -> Self {
+    pub fn new(title: String, path: String) -> Self {
         Self { title, path }
     }
 }
@@ -83,15 +86,15 @@ pub struct SidebarDirectoryHtmx {
     #[element("h2")]
     pub title: String,
 
-    pub path: uuid::Uuid,
-
     #[element("div")]
     #[attr("id" = "_{}", path)]
     pub sub: String,
+
+    pub path: String,
 }
 
 impl SidebarDirectoryHtmx {
-    pub fn new(title: String, path: uuid::Uuid) -> Self {
+    pub fn new(title: String, path: String) -> Self {
         Self {
             title,
             path,
@@ -128,4 +131,11 @@ pub struct DocumentTags {
     #[format("#{}")]
     #[attrs(class = "tag")]
     tags: Vec<String>,
+}
+
+#[derive(Debug, Default, htmxpress::Element)]
+#[element("head")]
+pub struct DocumentHeadHtmx {
+    #[element("title")]
+    title: String,
 }

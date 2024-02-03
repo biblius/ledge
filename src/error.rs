@@ -6,34 +6,34 @@ use tracing::error;
 
 #[derive(Debug, Error)]
 pub enum KnawledgeError {
-    #[error("{0}")]
+    #[error("IO: {0}")]
     IO(#[from] std::io::Error),
 
-    #[error("{0}")]
+    #[error("UTF-8: {0}")]
     Utf8(#[from] FromUtf8Error),
 
-    #[error("{0}")]
+    #[error("Parse int: {0}")]
     Parse(#[from] ParseIntError),
 
-    #[error("{0}")]
+    #[error("Template: {0}")]
     MiniJinja(#[from] minijinja::Error),
 
-    #[error("{0}")]
+    #[error("Not found: {0}")]
     NotFound(String),
 
-    #[error("{0}")]
+    #[error("Inotify error: {0}")]
     Watcher(#[from] notify::Error),
 
-    #[error("{0}")]
+    #[error("SQL: {0}")]
     Sqlx(#[from] sqlx::Error),
 
-    #[error("{0}")]
+    #[error("Does not exist: {0}")]
     DoesNotExist(String),
 
-    #[error("{0}")]
+    #[error("Invalid Directory: {0}")]
     InvalidDirectory(String),
 
-    #[error("{0}")]
+    #[error("YAML error: {0}")]
     SerdeYaml(#[from] serde_yaml::Error),
 }
 

@@ -13,39 +13,23 @@ use std::thread::ScopedJoinHandle;
 use std::time::Instant;
 use std::{fmt::Debug, path::Path};
 
-/// Document read from the fs with its metadata.
-#[derive(Debug, Default, Clone, Deserialize)]
-pub struct DocumentData {
-    /// Document markdown content
-    #[serde(skip)]
-    pub content: String,
-
-    pub title: Option<String>,
-
-    pub reading_time: Option<i32>,
-
-    pub tags: Option<Vec<String>>,
-
-    pub created_at: Option<DateTime<Utc>>,
-}
-
 /// Database model
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct Document {
+    /// File ID
     pub id: uuid::Uuid,
-
     /// File name with extension
     pub file_name: String,
-
-    /// Full path starting from the initial registered dir
+    /// Directory ID that contains this file
     pub directory: uuid::Uuid,
-
+    /// Canonicalised path
     pub path: String,
-
+    /// Title obtained from the document h1
     pub title: Option<String>,
-
+    /// User specified ID. Prioritised over primary key
+    /// and must be unique.
+    pub custom_id: Option<String>,
     pub created_at: DateTime<Utc>,
-
     pub updated_at: DateTime<Utc>,
 }
 
@@ -53,14 +37,15 @@ impl Document {
     pub fn new(directory: uuid::Uuid, name: String, path: String) -> Result<Self, KnawledgeError> {
         debug!("Processing {path}");
 
-        let data = Document::read_from_disk(&path)?;
+        let data = DocumentData::read_from_disk(&path)?;
 
         let document = Self {
             id: uuid::Uuid::new_v4(),
             file_name: name,
             directory,
             path,
-            title: data.title,
+            custom_id: data.meta.custom_id,
+            title: data.meta.title,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -76,48 +61,83 @@ impl Document {
             .unwrap_or("__unknown")
             .to_string()
     }
+}
 
-    pub fn read_from_disk(path: impl AsRef<Path>) -> Result<DocumentData, KnawledgeError> {
-        let mut data = DocumentData::default();
+/// Document read from the fs with its metadata.
+#[derive(Debug, Default)]
+pub struct DocumentData {
+    /// Document markdown content
+    pub content: String,
+    pub meta: DocumentMeta,
+}
 
+impl DocumentData {
+    pub fn read_from_disk(path: impl AsRef<Path>) -> Result<Self, KnawledgeError> {
+        let mut data = Self::default();
         let content = fs::read_to_string(path)?;
-        data.title = find_title_from_h1(&content);
+        let (meta, content) = DocumentMeta::read_from_str(&content)?;
+        data.content = content.to_string();
+        data.meta = meta;
+        Ok(data)
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct DocumentMeta {
+    /// A user specified identifier for the document for
+    /// URLs on Knawledger. Prioritised over the document UUID.
+    #[serde(rename = "id")]
+    pub custom_id: Option<String>,
+    pub title: Option<String>,
+    pub reading_time: Option<i32>,
+    pub tags: Option<Vec<String>>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+impl DocumentMeta {
+    pub fn read_from_file(path: impl AsRef<Path>) -> Result<Self, KnawledgeError> {
+        let content = fs::read_to_string(path)?;
+        Ok(Self::read_from_str(&content)?.0)
+    }
+
+    /// Used when we already read the file from the fs.
+    /// Returns the read meta and the remainder of the content.
+    pub fn read_from_str(content: &str) -> Result<(Self, &str), KnawledgeError> {
+        let mut data = Self {
+            title: find_title_from_h1(content),
+            ..Default::default()
+        };
 
         if !content.starts_with("---") {
-            data.content = content;
-            return Ok(data);
+            return Ok((data, content));
         }
 
         if content.len() < 4 {
-            data.content = content;
-            return Ok(data);
+            return Ok((data, content));
         }
 
         let Some(end_i) = &content[3..].find("---") else {
-            data.content = content[3..].to_string();
-            return Ok(data);
+            return Ok((data, &content[3..]));
         };
 
         // Offset to account for the skipped ---
         let meta_str = &content[3..*end_i + 2];
 
         if meta_str.is_empty() {
-            data.content = content[end_i + 6..].to_string();
-            return Ok(data);
+            return Ok((data, &content[end_i + 6..]));
         }
 
         data = serde_yaml::from_str(meta_str)?;
 
         let content = &content[end_i + 6..];
 
-        data.content = content.to_string();
         data.reading_time = Some(calculate_reading_time(content));
 
         if data.title.is_none() {
             data.title = find_title_from_h1(content);
         }
 
-        Ok(data)
+        Ok((data, content))
     }
 }
 

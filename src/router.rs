@@ -1,6 +1,6 @@
 use axum::{
     http::{HeaderValue, Response},
-    response::{IntoResponse, Redirect},
+    response::IntoResponse,
     routing::get,
     Router,
 };
@@ -11,8 +11,8 @@ use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing::info;
 
 use crate::{
-    db::DirectoryEntry,
-    document::Document,
+    db::models::DirectoryEntry,
+    document::{DocumentData, DocumentMeta},
     error::KnawledgeError,
     htmx::{MainDocumentHtmx, SidebarContainer, SidebarDirectoryHtmx, SidebarDocumentHtmx},
     state::State,
@@ -22,17 +22,29 @@ use std::{collections::HashMap, fmt::Write, str::FromStr};
 pub fn router(state: State) -> Router {
     Router::new()
         .nest_service("/public", ServeDir::new("public"))
-        .route(
-            "/favicon.ico",
-            get(Redirect::permanent("/public/favicon.ico")),
-        )
         .route("/", get(index))
-        .route("/main/*path", get(document_main))
-        .route("/documents", get(documents))
+        .route("/main/*id", get(document_main))
+        .route("/meta/*id", get(document_meta))
+        .route("/side", get(sidebar_init))
         .route("/side/*id", get(sidebar_entries))
         .route("/*path", get(document))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+pub async fn document_meta(
+    state: axum::extract::State<State>,
+    path: axum::extract::Path<uuid::Uuid>,
+) -> Result<impl IntoResponse, KnawledgeError> {
+    let doc_path = state.db.get_document_path(path.0).await?;
+
+    let Some(path) = doc_path else {
+        return Err(KnawledgeError::DoesNotExist(path.0.to_string()));
+    };
+
+    let meta = DocumentMeta::read_from_file(path)?;
+
+    Ok(String::new())
 }
 
 pub async fn sidebar_entries(
@@ -49,15 +61,32 @@ pub async fn sidebar_entries(
              name,
              r#type,
              title,
+             custom_id,
              ..
          }| {
             let title = title.unwrap_or_else(|| name.clone());
             match r#type.as_str() {
                 "f" => {
-                    let _ = write!(acc, "{}", SidebarDocumentHtmx::new(title, id).to_htmx());
+                    let _ = write!(
+                        acc,
+                        "{}",
+                        SidebarDocumentHtmx::new(
+                            title,
+                            custom_id.unwrap_or_else(|| id.to_string())
+                        )
+                        .to_htmx()
+                    );
                 }
                 "d" => {
-                    let _ = write!(acc, "{}", SidebarDirectoryHtmx::new(title, id).to_htmx());
+                    let _ = write!(
+                        acc,
+                        "{}",
+                        SidebarDirectoryHtmx::new(
+                            title,
+                            custom_id.unwrap_or_else(|| id.to_string())
+                        )
+                        .to_htmx()
+                    );
                 }
                 _ => unreachable!(),
             }
@@ -65,17 +94,10 @@ pub async fn sidebar_entries(
         },
     );
 
-    let mut response = Response::new(htmx);
-
-    response.headers_mut().insert(
-        "content-type",
-        HeaderValue::from_static("text/html; charset=utf8"),
-    );
-
-    Ok(response)
+    Ok(htmx_response(htmx))
 }
 
-pub async fn documents(
+pub async fn sidebar_init(
     state: axum::extract::State<State>,
 ) -> Result<impl IntoResponse, KnawledgeError> {
     let documents = state.db.list_roots_with_entries().await?;
@@ -89,6 +111,7 @@ pub async fn documents(
              parent,
              r#type,
              title,
+             custom_id,
          }| {
             if name.ends_with("index.md") {
                 return acc;
@@ -111,12 +134,15 @@ pub async fn documents(
 
             match r#type.as_str() {
                 "f" => {
-                    parent.documents.push(SidebarDocumentHtmx::new(title, id));
+                    parent.documents.push(SidebarDocumentHtmx::new(
+                        title,
+                        custom_id.unwrap_or_else(|| id.to_string()),
+                    ));
                 }
                 "d" => {
                     parent
                         .directories
-                        .push(SidebarDirectoryHtmx::new(title, id));
+                        .push(SidebarDirectoryHtmx::new(title, id.to_string()));
                 }
                 _ => unreachable!(),
             }
@@ -130,14 +156,7 @@ pub async fn documents(
         acc
     });
 
-    let mut response = Response::new(docs);
-
-    response.headers_mut().insert(
-        "content-type",
-        HeaderValue::from_static("text/html; charset=utf8"),
-    );
-
-    Ok(response)
+    Ok(htmx_response(docs))
 }
 
 pub async fn index(
@@ -150,25 +169,38 @@ pub async fn index(
         return Ok(Response::new(String::from("Hello world")));
     };
 
-    let index = Document::read_from_disk(path)?;
+    let index = DocumentData::read_from_disk(path)?;
     let main = markdown::to_html_with_options(&index.content, &Options::gfm()).unwrap();
     let template = state.context.get_template("index")?;
     let main = template.render(context! {main => main})?;
-    let mut response = Response::new(main);
 
-    response.headers_mut().insert(
-        "content-type",
-        HeaderValue::from_static("text/html; charset=utf8"),
-    );
-
-    Ok(response)
+    Ok(htmx_response(main))
 }
 
 pub async fn document(
     state: axum::extract::State<State>,
-    path: axum::extract::Path<uuid::Uuid>,
+    path: axum::extract::Path<String>,
 ) -> Result<impl IntoResponse, KnawledgeError> {
-    let doc_path = state.db.get_document_path(path.0).await?;
+    let uuid = uuid::Uuid::from_str(&path);
+
+    let Ok(uuid) = uuid else {
+        if let Some(path) = state.db.get_document_path_by_custom_id(&path).await? {
+            info!("Reading {path}");
+            let mut document = DocumentData::read_from_disk(path)?;
+            document.content =
+                markdown::to_html_with_options(&document.content, &Options::gfm()).unwrap();
+            let main = MainDocumentHtmx::from(document).to_htmx();
+
+            let page = state.context.get_template("index")?;
+            let page = page.render(context! {main => main})?;
+
+            return Ok(htmx_response(page));
+        } else {
+            return Err(KnawledgeError::DoesNotExist(path.0));
+        }
+    };
+
+    let doc_path = state.db.get_document_path(uuid).await?;
 
     let Some(path) = doc_path else {
         return Err(KnawledgeError::NotFound(path.0.to_string()));
@@ -176,20 +208,15 @@ pub async fn document(
 
     info!("Reading {path}");
 
-    let mut doc = Document::read_from_disk(path)?;
+    let mut doc = DocumentData::read_from_disk(path)?;
     doc.content = markdown::to_html_with_options(&doc.content, &Options::gfm()).unwrap();
 
     let main = MainDocumentHtmx::from(doc).to_htmx();
     let template = state.context.get_template("index")?;
+
     let response = template.render(context! {main => main})?;
-    let mut response = Response::new(response);
 
-    response.headers_mut().insert(
-        "content-type",
-        HeaderValue::from_static("text/html; charset=utf8"),
-    );
-
-    Ok(response)
+    Ok(htmx_response(response))
 }
 
 pub async fn document_main(
@@ -198,22 +225,19 @@ pub async fn document_main(
 ) -> Result<impl IntoResponse, KnawledgeError> {
     let uuid = uuid::Uuid::from_str(&path);
     let Ok(uuid) = uuid else {
-        if path.0 == "index" {
+        if let Some(path) = state.db.get_document_path_by_custom_id(&path).await? {
+            let index = DocumentData::read_from_disk(path)?;
+            let index = markdown::to_html_with_options(&index.content, &Options::gfm()).unwrap();
+
+            return Ok(htmx_response(index));
+        } else if path.0 == "index" {
             let Some(path) = state.db.get_index_path().await? else {
                 return Ok(Response::new(String::from("Hello world")));
             };
-
-            let index = Document::read_from_disk(path)?;
+            let index = DocumentData::read_from_disk(path)?;
             let index = markdown::to_html_with_options(&index.content, &Options::gfm()).unwrap();
 
-            let mut response = Response::new(index);
-
-            response.headers_mut().insert(
-                "content-type",
-                HeaderValue::from_static("text/html; charset=utf8"),
-            );
-
-            return Ok(response);
+            return Ok(htmx_response(index));
         } else {
             return Err(KnawledgeError::DoesNotExist(path.0));
         }
@@ -225,18 +249,22 @@ pub async fn document_main(
         .await?
         .map(|path| {
             info!("Reading {path}");
-            let mut doc = Document::read_from_disk(path).unwrap();
+            let mut doc = DocumentData::read_from_disk(path).unwrap();
             doc.content = markdown::to_html_with_options(&doc.content, &Options::gfm()).unwrap();
             MainDocumentHtmx::from(doc).to_htmx()
         })
         .unwrap_or("Hello world".to_string());
 
-    let mut response = Response::new(doc);
+    Ok(htmx_response(doc))
+}
+
+fn htmx_response(res: String) -> Response<String> {
+    let mut response = Response::new(res);
 
     response.headers_mut().insert(
         "content-type",
         HeaderValue::from_static("text/html; charset=utf8"),
     );
 
-    Ok(response)
+    response
 }

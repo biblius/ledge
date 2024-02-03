@@ -1,6 +1,6 @@
 # Building binaries for the PI (ARM64) with R\*st
 
-[Click me](/foo.md)
+[Click me](/foo-my-man)
 
 This post serves as a reminder so I don't forget how to build binaries for the PI, but it can help anyone with the some of the gotchas I had when building [this](https://github.com/biblius/pg_migrator) binary for the PI.
 
