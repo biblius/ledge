@@ -1,5 +1,5 @@
 use crate::{
-    document::{Directory, Document},
+    document::{Directory, Document, DocumentMeta},
     error::KnawledgeError,
 };
 use models::DirectoryEntry;
@@ -27,7 +27,7 @@ impl Database {
             .expect("error in migrations")
     }
 
-    pub async fn insert_directory(
+    pub async fn insert_dir(
         &self,
         path: &str,
         name: &str,
@@ -45,28 +45,32 @@ impl Database {
         .map_err(KnawledgeError::from)
     }
 
-    pub async fn insert_document(&self, document: Document) -> Result<(), KnawledgeError> {
+    pub async fn insert_doc(
+        &self,
+        document: &Document,
+        meta: &DocumentMeta,
+    ) -> Result<(), KnawledgeError> {
         let Document {
-            id,
             file_name,
             directory,
             path,
-            title,
-            custom_id,
-            created_at,
-            updated_at,
         } = document;
 
+        let DocumentMeta {
+            custom_id,
+            title,
+            tags,
+            ..
+        } = meta;
+
         sqlx::query!(
-            "INSERT INTO documents VALUES($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
-            id,
+            "INSERT INTO documents(file_name, directory, path, custom_id, title, tags) VALUES($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
             file_name,
             directory,
             path,
-            title,
-            custom_id,
-            created_at,
-            updated_at
+            custom_id.as_ref(),
+            title.as_ref(),
+            tags.as_ref().map(|el|el.join(","))
         )
         .execute(&self.pool)
         .await
@@ -83,17 +87,14 @@ impl Database {
         )
     }
 
-    pub async fn get_document_path(
-        &self,
-        id: uuid::Uuid,
-    ) -> Result<Option<String>, KnawledgeError> {
+    pub async fn get_doc_path(&self, id: uuid::Uuid) -> Result<Option<String>, KnawledgeError> {
         Ok(sqlx::query!("SELECT path FROM documents WHERE id = $1", id)
             .fetch_optional(&self.pool)
             .await?
             .map(|el| el.path))
     }
 
-    pub async fn get_document_path_by_custom_id(
+    pub async fn get_doc_path_by_custom_id(
         &self,
         custom_id: &str,
     ) -> Result<Option<String>, KnawledgeError> {
@@ -134,14 +135,15 @@ impl Database {
         .map_err(KnawledgeError::from)
     }
 
-    pub async fn list_existing(
+    pub async fn list_document_in_dir(
         &self,
         directory: uuid::Uuid,
         file_names: &[String],
     ) -> Result<Vec<Document>, KnawledgeError> {
         sqlx::query_as!(
             Document,
-            "SELECT * FROM documents WHERE file_name = ANY($1) AND directory = $2",
+            "SELECT file_name, directory, path 
+             FROM documents WHERE file_name = ANY($1) AND directory = $2",
             file_names,
             directory
         )
@@ -229,6 +231,37 @@ impl Database {
         .map_err(KnawledgeError::from)
     }
 
+    pub async fn update_doc_by_path(
+        &self,
+        path: &str,
+        meta: &DocumentMeta,
+    ) -> Result<(), KnawledgeError> {
+        let DocumentMeta {
+            custom_id,
+            title,
+            reading_time,
+            tags,
+        } = meta;
+        sqlx::query!(
+            r#"
+            UPDATE documents SET 
+            custom_id = $1,
+            title = $2,
+            reading_time = $3,
+            tags = $4
+            WHERE path = $5 
+        "#,
+            custom_id.as_ref(),
+            title.as_ref(),
+            reading_time.as_ref(),
+            tags.as_ref().map(|t| t.join(",")),
+            path
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn remove_dir(&self, path: &str) -> Result<(), KnawledgeError> {
         sqlx::query_as!(Directory, "DELETE FROM directories WHERE path = $1", path)
             .fetch_optional(&self.pool)
@@ -237,7 +270,7 @@ impl Database {
             .map_err(KnawledgeError::from)
     }
 
-    pub async fn remove_file(&self, path: &str) -> Result<(), KnawledgeError> {
+    pub async fn remove_doc(&self, path: &str) -> Result<(), KnawledgeError> {
         sqlx::query!("DELETE FROM documents WHERE path = $1", path)
             .execute(&self.pool)
             .await?;

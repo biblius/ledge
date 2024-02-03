@@ -3,6 +3,9 @@ use crate::document::{DocumentData, DocumentMeta};
 #[derive(Debug, htmxpress::Element)]
 pub struct MainDocumentHtmx {
     #[nest]
+    pub head: Option<DocumentHeadHtmx>,
+
+    #[nest]
     pub meta: Option<DocumentHeaderInfo>,
 
     #[element("div")]
@@ -10,23 +13,40 @@ pub struct MainDocumentHtmx {
     pub content: String,
 }
 
-impl From<DocumentData> for MainDocumentHtmx {
-    fn from(value: DocumentData) -> Self {
+impl MainDocumentHtmx {
+    pub fn new_page(data: DocumentData) -> Self {
         let DocumentData {
             content,
-            meta:
-                DocumentMeta {
-                    reading_time,
-                    tags,
-                    created_at,
-                    ..
-                },
-        } = value;
+            meta: DocumentMeta {
+                reading_time, tags, ..
+            },
+        } = data;
         Self {
+            head: None,
             meta: reading_time.map(|reading_time| DocumentHeaderInfo {
                 reading_time,
                 tags_p: "Tags:",
-                date: created_at.map(|c| c.to_string()),
+                tags: tags.map(|tags| (DocumentTags { tags })),
+                date: None, //TODO
+            }),
+            content,
+        }
+    }
+
+    pub fn new_main(head: Option<DocumentHeadHtmx>, data: DocumentData) -> Self {
+        let DocumentData {
+            content,
+            meta: DocumentMeta {
+                reading_time, tags, ..
+            },
+        } = data;
+        Self {
+            head,
+            meta: reading_time.map(|reading_time| DocumentHeaderInfo {
+                reading_time,
+                tags_p: "Tags:",
+                date: None, // TODO
+                // date: created_at.map(|c| c.to_string()),
                 tags: tags.map(|tags| (DocumentTags { tags })),
             }),
             content,
@@ -138,4 +158,12 @@ pub struct DocumentTags {
 pub struct DocumentHeadHtmx {
     #[element("title")]
     title: String,
+}
+
+impl DocumentHeadHtmx {
+    pub fn new(title: &str) -> Self {
+        Self {
+            title: title.to_string(),
+        }
+    }
 }

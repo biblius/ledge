@@ -9,15 +9,15 @@ use std::{
 };
 
 use notify::{
-    event::{CreateKind, ModifyKind, RemoveKind, RenameMode},
+    event::{CreateKind, DataChange, ModifyKind, RemoveKind, RenameMode},
     EventKind, RecommendedWatcher, Watcher,
 };
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info};
 
 use crate::{
     db::Database,
-    document::{process_directory, Document},
+    document::{process_directory, Document, DocumentMeta},
     error::KnawledgeError,
 };
 
@@ -86,7 +86,21 @@ impl NotifyHandler {
                         if event.paths.is_empty() {
                             continue;
                         }
-                        debug!("Directory created: {}", event.paths[0].display());
+                        let path = event.paths[0].display().to_string();
+                        let Some((parent, name)) = path.rsplit_once('/') else {
+                            continue;
+                        };
+                        let parent = self.db.get_dir_by_path(parent).await.unwrap();
+
+                        // Parent IDs always must exist here since we know the
+                        // dir is a child in a watched directory
+                        if let Some(parent) = parent {
+                            info!("Syncing directory {path} with database");
+                            self.db
+                                .insert_dir(&path, name, Some(parent.id))
+                                .await
+                                .unwrap();
+                        }
                     }
                     EventKind::Create(CreateKind::File) => {
                         if event.paths.is_empty() {
@@ -101,19 +115,16 @@ impl NotifyHandler {
                             continue;
                         }
                         let path = event.paths[0].display().to_string();
-                        info!("Removing {path} from database");
-                        self.db.remove_file(&path).await.unwrap();
+                        info!("Removing file {path} from database");
+                        self.db.remove_doc(&path).await.unwrap();
                     }
                     EventKind::Remove(RemoveKind::Folder) => {
                         if event.paths.is_empty() {
                             continue;
                         }
-                        let path = &event.paths[0];
-                        debug!("Directory removed: {}", path.display());
-                        self.db
-                            .remove_dir(&path.display().to_string())
-                            .await
-                            .unwrap();
+                        let path = &event.paths[0].display().to_string();
+                        info!("Removing directory {path} from database");
+                        self.db.remove_dir(path).await.unwrap();
                     }
                     EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
                         if event.paths.is_empty() {
@@ -154,6 +165,15 @@ impl NotifyHandler {
                             info!("Syncing file {path} with database");
                             Self::process_file(&self.db, path).await;
                         }
+                    }
+                    EventKind::Modify(ModifyKind::Data(DataChange::Any)) => {
+                        if event.paths.is_empty() {
+                            continue;
+                        }
+                        let path = event.paths[0].display().to_string();
+                        info!("Syncing file {path} with database");
+                        let meta = DocumentMeta::read_from_file(&path).unwrap();
+                        self.db.update_doc_by_path(&path, &meta).await.unwrap();
                     }
                     // Handles removal and addition of files.
                     EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
@@ -206,11 +226,11 @@ impl NotifyHandler {
                                 info!("Removing file/dir {path} from database");
 
                                 self.db.remove_dir(&path).await.unwrap();
-                                self.db.remove_file(&path).await.unwrap();
+                                self.db.remove_doc(&path).await.unwrap();
                             }
                         }
                     }
-                    e => warn!("Unhandled event: {e:?}"),
+                    e => info!("Inotify event: {e:?}"),
                 }
             }
         });
@@ -230,10 +250,10 @@ impl NotifyHandler {
         };
 
         // Here we already have the canonicalized path
-        let Ok(doc) = Document::new(dir.id, name.to_string(), path.to_string()) else {
+        let Ok((doc, meta)) = Document::new(dir.id, name.to_string(), path.to_string()) else {
             return;
         };
 
-        db.insert_document(doc).await.unwrap();
+        db.insert_doc(&doc, &meta).await.unwrap();
     }
 }

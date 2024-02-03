@@ -34,6 +34,8 @@ CREATE TABLE documents (
     path TEXT NOT NULL,
     title TEXT, -- Temporary title obtained from h1, overriden by meta title
     custom_id TEXT,
+    tags TEXT,
+    reading_time INT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -16,41 +16,31 @@ use std::{fmt::Debug, path::Path};
 /// Database model
 #[derive(Debug, Default)]
 pub struct Document {
-    /// File ID
-    pub id: uuid::Uuid,
     /// File name with extension
     pub file_name: String,
     /// Directory ID that contains this file
     pub directory: uuid::Uuid,
     /// Canonicalised path
     pub path: String,
-    /// Title obtained from the document h1
-    pub title: Option<String>,
-    /// User specified ID. Prioritised over primary key
-    /// and must be unique.
-    pub custom_id: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
 }
 
 impl Document {
-    pub fn new(directory: uuid::Uuid, name: String, path: String) -> Result<Self, KnawledgeError> {
+    pub fn new(
+        directory: uuid::Uuid,
+        name: String,
+        path: String,
+    ) -> Result<(Self, DocumentMeta), KnawledgeError> {
         debug!("Processing {path}");
 
-        let data = DocumentData::read_from_disk(&path)?;
+        let meta = DocumentMeta::read_from_file(&path)?;
 
         let document = Self {
-            id: uuid::Uuid::new_v4(),
             file_name: name,
             directory,
             path,
-            custom_id: data.meta.custom_id,
-            title: data.meta.title,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
         };
 
-        Ok(document)
+        Ok((document, meta))
     }
 
     pub fn name(path: impl AsRef<Path>) -> String {
@@ -91,7 +81,6 @@ pub struct DocumentMeta {
     pub title: Option<String>,
     pub reading_time: Option<i32>,
     pub tags: Option<Vec<String>>,
-    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl DocumentMeta {
@@ -183,17 +172,14 @@ pub async fn process_directory(
 
             match parent {
                 Some(dir) => dir,
-                None => {
-                    db.insert_directory(&full_path, dir_name, Some(parent_id))
-                        .await?
-                }
+                None => db.insert_dir(&full_path, dir_name, Some(parent_id)).await?,
             }
         }
         None => {
             let root = db.get_root_dir_by_name(dir_name).await?;
             match root {
                 Some(dir) => dir,
-                None => db.insert_directory(&full_path, dir_name, None).await?,
+                None => db.insert_dir(&full_path, dir_name, None).await?,
             }
         }
     };
@@ -230,7 +216,9 @@ pub async fn process_directory(
         markdown_files.push(path);
     }
 
-    let existing = db.list_existing(directory_entry.id, &file_names).await?;
+    let existing = db
+        .list_document_in_dir(directory_entry.id, &file_names)
+        .await?;
 
     let mut amt_files_existing = 0;
     for item in existing {
@@ -247,7 +235,7 @@ pub async fn process_directory(
         });
 
         if let Some(idx) = idx {
-            debug!("Already exists: {} ", item.file_name);
+            debug!("Already exists: {}", item.file_name);
             markdown_files.swap_remove(idx);
             amt_files_existing += 1;
         }
@@ -256,8 +244,8 @@ pub async fn process_directory(
     process_files(directory_entry.id, markdown_files, &mut files_processed)?;
 
     let amt_files_processed = files_processed.len();
-    for file in files_processed {
-        db.insert_document(file).await?;
+    for (file, meta) in files_processed {
+        db.insert_doc(&file, &meta).await?;
     }
 
     info!(
@@ -270,7 +258,7 @@ pub async fn process_directory(
 fn process_files(
     directory: uuid::Uuid,
     file_paths: Vec<PathBuf>,
-    files: &mut Vec<Document>,
+    files: &mut Vec<(Document, DocumentMeta)>,
 ) -> Result<(), KnawledgeError> {
     let files_total = file_paths.len();
 
@@ -300,7 +288,7 @@ fn process_files(
         }
 
         type TaskWithStart<'a> = (
-            ScopedJoinHandle<'a, Result<Vec<Document>, KnawledgeError>>,
+            ScopedJoinHandle<'a, Result<Vec<(Document, DocumentMeta)>, KnawledgeError>>,
             Instant,
         );
 
