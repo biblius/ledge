@@ -66,11 +66,14 @@ pub struct SidebarContainer {
 
     #[list(nest)]
     pub directories: Vec<SidebarDirectoryHtmx>,
+
+    pub id: uuid::Uuid,
 }
 
 impl SidebarContainer {
-    pub fn new(name: String) -> Self {
+    pub fn new(id: uuid::Uuid, name: String) -> Self {
         Self {
+            id,
             root_name: name,
             ..Default::default()
         }

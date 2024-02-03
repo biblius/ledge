@@ -20,7 +20,7 @@ use crate::{
     },
     state::State,
 };
-use std::{collections::HashMap, fmt::Write, str::FromStr};
+use std::{fmt::Write, str::FromStr};
 
 const DEFAULT_TITLE: &str = "Knawledger";
 
@@ -183,58 +183,54 @@ pub async fn document_meta(
 pub async fn sidebar_init(
     state: axum::extract::State<State>,
 ) -> Result<impl IntoResponse, KnawledgeError> {
-    let documents = state.db.list_roots_with_entries().await?;
+    let docs = state.db.list_roots_with_entries().await?;
 
-    let docs = documents.into_iter().fold(
-        HashMap::new(),
-        |mut acc: HashMap<_, SidebarContainer>,
-         DirectoryEntry {
-             id,
-             name,
-             parent,
-             r#type,
-             title,
-             custom_id,
-         }| {
-            if name.ends_with("index.md") {
-                return acc;
+    let mut documents = vec![];
+
+    for DirectoryEntry {
+        id,
+        name,
+        parent,
+        r#type,
+        title,
+        custom_id,
+    } in docs
+    {
+        if name.ends_with("index.md") {
+            continue;
+        }
+
+        // Root directories have no parent
+        let Some(parent) = parent else {
+            documents.push(SidebarContainer::new(id, name));
+            continue;
+        };
+
+        let title = title.unwrap_or_else(|| name.clone());
+
+        // list_roots() returns an ordered list with the roots
+        // always as the first elements so we should have parents here
+        let Some(ref mut parent) = documents.iter_mut().find(|d| d.id == parent) else {
+            continue;
+        };
+
+        match r#type.as_str() {
+            "f" => {
+                parent.documents.push(SidebarDocumentHtmx::new(
+                    title,
+                    custom_id.unwrap_or_else(|| id.to_string()),
+                ));
             }
-
-            // Root directories have no parent
-            if parent.is_none() {
-                acc.insert(id, SidebarContainer::new(name));
-                return acc;
+            "d" => {
+                parent
+                    .directories
+                    .push(SidebarDirectoryHtmx::new(title, id.to_string()));
             }
+            _ => unreachable!(),
+        }
+    }
 
-            let title = title.unwrap_or_else(|| name.clone());
-            let parent = parent.unwrap();
-
-            // list_roots() returns an ordered list with the roots
-            // always as the first elements
-            let Some(parent) = acc.get_mut(&parent) else {
-                return acc;
-            };
-
-            match r#type.as_str() {
-                "f" => {
-                    parent.documents.push(SidebarDocumentHtmx::new(
-                        title,
-                        custom_id.unwrap_or_else(|| id.to_string()),
-                    ));
-                }
-                "d" => {
-                    parent
-                        .directories
-                        .push(SidebarDirectoryHtmx::new(title, id.to_string()));
-                }
-                _ => unreachable!(),
-            }
-
-            acc
-        },
-    );
-
-    let docs = docs.values().fold(String::new(), |mut acc, el| {
+    let docs = documents.into_iter().fold(String::new(), |mut acc, el| {
         let _ = write!(acc, "{}", el.to_htmx());
         acc
     });
