@@ -14,6 +14,7 @@ lazy_static::lazy_static! {
     pub static ref MAX_THREADS: usize = std::thread::available_parallelism().unwrap_or(NonZeroUsize::new(1).unwrap()).into();
 }
 
+pub mod chunk;
 pub mod db;
 pub mod document;
 pub mod error;
