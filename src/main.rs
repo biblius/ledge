@@ -17,6 +17,7 @@ lazy_static::lazy_static! {
 
 pub mod auth;
 pub mod config;
+pub mod chunk;
 pub mod db;
 pub mod document;
 pub mod error;
