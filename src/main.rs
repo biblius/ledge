@@ -24,6 +24,7 @@ pub mod error;
 pub mod notifiy;
 pub mod router;
 pub mod state;
+pub mod vector_db;
 
 #[tokio::main]
 async fn main() {

@@ -5,6 +5,7 @@ use thiserror::Error;
 use tracing::error;
 
 use crate::auth::AuthError;
+use crate::llm;
 
 #[derive(Debug, Error)]
 pub enum LedgeknawError {
@@ -32,6 +33,9 @@ pub enum LedgeknawError {
     #[error("Invalid Directory: {0}")]
     InvalidDirectory(String),
 
+    #[error("JSON error: {0}")]
+    SerdeJson(#[from] serde_json::Error),
+
     #[error("YAML error: {0}")]
     SerdeYaml(#[from] serde_yaml::Error),
 
@@ -49,6 +53,11 @@ pub enum LedgeknawError {
 
     #[error("Authentication: {0}")]
     Auth(#[from] AuthError),
+    #[error("Chunker error: {0}")]
+    Chunker(#[from] llm::chunk::ChunkerError),
+
+    #[error("Query validation error: {0}")]
+    QueryValidation(String),
 }
 
 impl From<argon2::Error> for LedgeknawError {

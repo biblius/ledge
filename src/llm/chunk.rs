@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::str::Utf8Error;
 use thiserror::Error;
 use tracing::{debug, trace};
@@ -15,7 +16,7 @@ pub enum ChunkerError {
     Utf8(#[from] Utf8Error),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Chunk<'a> {
     pub content: &'a str,
 }
@@ -27,10 +28,20 @@ impl<'a> Chunk<'a> {
 }
 
 /// Default chunk size for all chunkers
-const DEFAULT_SIZE: usize = 500;
+const DEFAULT_SIZE: usize = 1000;
 
-/// Default chunk overlap for all chunkers
-const DEFAULT_OVERLAP: usize = 200;
+/// Default chunk overlap for all character based chunkers
+const DEFAULT_OVERLAP: usize = 500;
+
+/// Default delimiters for the [recursive chunker][Recursive].
+const DEFAULT_DELIMS: &[&str] = &["\n\n", "\n", " ", ""];
+
+/// Default delimiters for the [recursive chunker][Recursive] when constructed with
+/// [Recursive::markdown].
+const MARKDOWN_DELIMS: &[&str] = &[
+    "#", "##", "###", "####", "#####", "######", "\n```", "\n---\n", "\n___\n", "\n\n", "\n", " ",
+    "",
+];
 
 #[derive(Debug)]
 pub struct SlidingWindow {
@@ -110,8 +121,6 @@ impl Default for SlidingWindow {
     }
 }
 
-const DEFAULT_DELIMS: &[&str] = &["\n\n", "\n", " ", ""];
-
 /// A chunker based on langchain's
 /// [RecursiveCharacterSplitter](https://dev.to/eteimz/understanding-langchains-recursivecharactertextsplitter-2846).
 ///
@@ -155,6 +164,14 @@ impl<'delim> Recursive<'delim> {
     pub fn delimiters(mut self, delimiters: &'delim [&str]) -> Self {
         self.delims = delimiters;
         self
+    }
+
+    pub fn markdown() -> Self {
+        Self {
+            size: DEFAULT_SIZE,
+            overlap: DEFAULT_OVERLAP,
+            delims: MARKDOWN_DELIMS,
+        }
     }
 
     /// Chunk the input using this instance's delimiters.
@@ -209,7 +226,7 @@ impl<'delim> Recursive<'delim> {
                 // and that it lives through each invocation. We are always incrementing
                 // the pointer by the chunk length so we are never out of bounds.
                 unsafe {
-                    buffer = &*std::str::from_utf8(&*buf)?;
+                    buffer = std::str::from_utf8(&*buf)?;
                 }
 
                 continue;
@@ -223,7 +240,7 @@ impl<'delim> Recursive<'delim> {
                 // Check again and reset loop if it fits, setting the current buffer
                 // to the chunk
                 if chunk.len() <= *size {
-                    buffer = &*chunk;
+                    buffer = chunk;
                     continue;
                 }
 
@@ -260,7 +277,7 @@ impl<'delim> Chunker for Recursive<'delim> {
 
             // SAFETY: We know we're withing the bounds of the original string since
             // every split perfectly aligns with the next and previous one
-            Ok(unsafe { std::str::from_utf8(&*current_ptr) }?)
+            unsafe { std::str::from_utf8(&*current_ptr) }
         }
 
         for i in 0..splits.len() {
@@ -311,7 +328,7 @@ impl<'delim> Chunker for Recursive<'delim> {
                 &next[..self.overlap]
             };
 
-            let current = combine_str(&prev, current)?;
+            let current = combine_str(prev, current)?;
             let chunk = combine_str(current, next)?;
 
             chunks.push(chunk);
@@ -320,7 +337,7 @@ impl<'delim> Chunker for Recursive<'delim> {
         println!(
             "Chunked {} chunks, avg chunk size: {}",
             chunks.len(),
-            if chunks.len() == 0 {
+            if chunks.is_empty() {
                 0
             } else {
                 chunks.iter().fold(0, |acc, el| acc + el.len()) / chunks.len()
@@ -380,9 +397,9 @@ impl Chunker for SlidingWindowDelimited {
             // Advance until a delimiter end is found
             let mut skipped = 0;
             while input
-                .bytes()
-                .nth(current_end + 1)
-                .is_some_and(|ch| ch == *delimiter as u8)
+                .as_bytes()
+                .get(current_end + 1)
+                .is_some_and(|ch| *ch == *delimiter as u8)
             {
                 current_end += 1;
                 skipped += 1;
@@ -417,9 +434,9 @@ impl Chunker for SlidingWindowDelimited {
                 // Skip sequences of trailing punctuation
                 let mut amt_skipped = 0;
                 while input[..prev_start]
-                    .bytes()
-                    .nth(prev_idx - 1)
-                    .is_some_and(|ch| ch == *delimiter as u8)
+                    .as_bytes()
+                    .get(prev_idx - 1)
+                    .is_some_and(|ch| *ch == *delimiter as u8)
                 {
                     amt_skipped += 1;
                     prev_idx -= 1;
@@ -509,7 +526,7 @@ mod tests {
     #[test]
     fn pointer_sanity() {
         let input = "Hello\nWorld";
-        let split = input.split_inclusive("\n").collect::<Vec<_>>();
+        let split = input.split_inclusive('\n').collect::<Vec<_>>();
 
         let one = split[0];
         let two = split[1];
@@ -584,9 +601,11 @@ The first programs I tried writing were on the IBM 1401 that our school district
 
     #[test]
     fn sliding_window_delim_works() {
-        let mut chunker = SlidingWindowDelimited::default();
-        chunker.size = 50;
-        chunker.overlap = 2;
+        let chunker = SlidingWindowDelimited {
+            size: 50,
+            overlap: 2,
+            delimiter: '.',
+        };
 
         let chunks = chunker.chunk(INPUT.trim()).unwrap();
         for chunk in chunks {
@@ -615,9 +634,11 @@ Exactly 15.
 Exactly 16.
 Exactly 17.
         "#;
-        let mut chunker = SlidingWindowDelimited::default();
-        chunker.size = 10;
-        chunker.overlap = 2;
+        let chunker = SlidingWindowDelimited {
+            size: 10,
+            overlap: 2,
+            delimiter: '.',
+        };
 
         let chunks = chunker.chunk(input.trim()).unwrap();
         for chunk in chunks {
@@ -629,9 +650,11 @@ Exactly 17.
     fn sliding_window_delim_skip() {
         let input = r#"Skip this........ Please do so. It would... Be a shame if you didn't."#;
 
-        let mut chunker = SlidingWindowDelimited::default();
-        chunker.size = 10;
-        chunker.overlap = 2;
+        let chunker = SlidingWindowDelimited {
+            size: 10,
+            overlap: 2,
+            delimiter: '.',
+        };
 
         let chunks = chunker.chunk(input.trim()).unwrap();
         for chunk in chunks {
@@ -643,11 +666,13 @@ Exactly 17.
     fn swd_works_with_file() {
         let input = std::fs::read_to_string("content/README.md").unwrap();
 
-        let mut chunker = Recursive::default();
-        chunker.delims = &[
-            "######", "#####", "####", "###", "##", "#", "```", "\n---\n", "\n___\n", "\n\n", "\n",
-            " ", "",
-        ];
+        let chunker = Recursive {
+            delims: &[
+                "######", "#####", "####", "###", "##", "#", "```", "\n---\n", "\n___\n", "\n\n",
+                "\n", " ", "",
+            ],
+            ..Default::default()
+        };
 
         let chunks = chunker.chunk(input.trim()).unwrap();
         for chunk in chunks {
