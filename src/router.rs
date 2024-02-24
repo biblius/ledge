@@ -1,12 +1,14 @@
+use crate::llm::chunk::{Chunk, Chunker, Recursive, SlidingWindow, SlidingWindowDelimited};
 use axum::{
     http::{HeaderValue, Response},
     response::IntoResponse,
-    routing::get,
-    Router,
+    routing::{get, post},
+    Json, Router,
 };
 use htmxpress::HtmxElement;
 use markdown::Options;
 use minijinja::context;
+use serde::Deserialize;
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing::info;
 
@@ -28,13 +30,73 @@ pub fn router(state: State) -> Router {
     Router::new()
         .nest_service("/public", ServeDir::new("public"))
         .route("/", get(index_page))
-        .route("/main/*id", get(document_main))
-        .route("/meta/*id", get(document_meta))
+        .route("/main/:id", get(document_main))
+        .route("/meta/:id", get(document_meta))
         .route("/side", get(sidebar_init))
-        .route("/side/*id", get(sidebar_entries))
+        .route("/side/:id", get(sidebar_entries))
         .route("/*path", get(document_page))
         .layer(TraceLayer::new_for_http())
-        .with_state(state)
+        .with_state(state.clone())
+        .merge(admin_router(state))
+}
+
+fn admin_router(state: State) -> Router {
+    let router = Router::new().route("/document/chunk", post(chunk));
+    Router::new().nest("/admin", router).with_state(state)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ChunkerType {
+    SlidingWindow,
+    Recursive,
+    Swd,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ChunkFlavor {
+    Default,
+    Markdown,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChunkParams {
+    doc_id: uuid::Uuid,
+    chunker: ChunkerType,
+    chunk_size: Option<usize>,
+    chunk_overlap: Option<usize>,
+    flavor: Option<ChunkFlavor>,
+}
+
+pub async fn chunk(
+    state: axum::extract::State<State>,
+    params: axum::extract::Json<ChunkParams>,
+) -> Result<Json<Vec<String>>, KnawledgeError> {
+    let Some(path) = state.db.get_doc_path(params.doc_id).await? else {
+        return Err(KnawledgeError::DoesNotExist(params.doc_id.to_string()));
+    };
+
+    let file = DocumentData::read_from_disk(path)?;
+
+    let chunks = match params.chunker {
+        ChunkerType::SlidingWindow => {
+            let chunker = SlidingWindow::default();
+            chunker.chunk(&file.content)?
+        }
+        ChunkerType::Recursive => {
+            let chunker = Recursive::default();
+            chunker.chunk(&file.content)?
+        }
+        ChunkerType::Swd => {
+            let chunker = SlidingWindowDelimited::default();
+            chunker.chunk(&file.content)?
+        }
+    };
+
+    Ok(Json(
+        chunks.into_iter().map(|ch| ch.content.to_owned()).collect(),
+    ))
 }
 
 pub async fn index_page(
@@ -62,7 +124,8 @@ pub async fn document_main(
 ) -> Result<impl IntoResponse, KnawledgeError> {
     let uuid = uuid::Uuid::from_str(&path);
 
-    let read_data = |path: &str| -> Result<String, KnawledgeError> {
+    /// Read a document and convert it to its htmx representation
+    fn read_document_to_htmx(path: &str) -> Result<String, KnawledgeError> {
         let mut document = DocumentData::read_from_disk(path)?;
         document.content =
             markdown::to_html_with_options(&document.content, &Options::gfm()).unwrap();
@@ -71,11 +134,11 @@ pub async fn document_main(
             document,
         )
         .to_htmx())
-    };
+    }
 
     let Ok(uuid) = uuid else {
         if let Some(ref path) = state.db.get_doc_path_by_custom_id(&path).await? {
-            let response = read_data(path)?;
+            let response = read_document_to_htmx(path)?;
 
             return Ok(htmx_response(response));
         }
@@ -88,7 +151,7 @@ pub async fn document_main(
             return Ok(Response::new(String::from("Hello world")));
         };
 
-        let response = read_data(&path)?;
+        let response = read_document_to_htmx(&path)?;
         return Ok(htmx_response(response));
     };
 
@@ -96,7 +159,7 @@ pub async fn document_main(
         return Err(KnawledgeError::NotFound(path.0));
     };
 
-    let response = read_data(&path)?;
+    let response = read_document_to_htmx(&path)?;
     Ok(htmx_response(response))
 }
 

@@ -4,6 +4,8 @@ use axum::{http::StatusCode, response::IntoResponse};
 use thiserror::Error;
 use tracing::error;
 
+use crate::llm;
+
 #[derive(Debug, Error)]
 pub enum KnawledgeError {
     #[error("IO: {0}")]
@@ -33,8 +35,17 @@ pub enum KnawledgeError {
     #[error("Invalid Directory: {0}")]
     InvalidDirectory(String),
 
+    #[error("JSON error: {0}")]
+    SerdeJson(#[from] serde_json::Error),
+
     #[error("YAML error: {0}")]
     SerdeYaml(#[from] serde_yaml::Error),
+
+    #[error("Chunker error: {0}")]
+    Chunker(#[from] llm::chunk::ChunkerError),
+
+    #[error("Query validation error: {0}")]
+    QueryValidation(String),
 }
 
 impl IntoResponse for KnawledgeError {

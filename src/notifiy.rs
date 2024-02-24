@@ -45,6 +45,7 @@ impl NotifyHandler {
         Self { db, roots, _rx: rx }
     }
 
+    // TODO: Shutdown channel
     pub fn run(self) -> Result<JoinHandle<()>, KnawledgeError> {
         let config = notify::Config::default().with_poll_interval(Duration::from_secs(1));
 
