@@ -1,27 +1,28 @@
-<!DOCTYPE html>
+<!doctype html>
 
 <head>
     <script type="module" src="/public/htmx/htmx.min.js"></script>
     <script type="module" src="/public/htmx/head-support.js"></script>
     <script type="module" src="/public/index.js"></script>
 
-    <title> {{ title }} </title>
+    <title>{{ title }}</title>
 
-    <meta hx-preserve="true" charset="utf-8">
-    <meta hx-preserve="true" name="viewport" content="width=device-width">
+    <meta hx-preserve="true" charset="utf-8" />
+    <meta hx-preserve="true" name="viewport" content="width=device-width" />
     <meta hx-preserve="true" name="color-scheme" content="dark light" />
 
-    <meta name="description" content="Ledger for Knawledge">
-    <meta name="keywords" content="Knowledge, Ledger, Knawledge">
+    <meta name="description" content="Ledger for Knawledge" />
+    <meta name="keywords" content="Knowledge, Ledger, Knawledge" />
 
-    <link hx-preserve="true" rel="stylesheet" href="/public/styles.css">
-    <link hx-preserve="true" rel="icon" href="/public/favicon.ico">
+    <link hx-preserve="true" rel="stylesheet" href="/public/styles.css" />
+    <link hx-preserve="true" rel="icon" href="/public/favicon.ico" />
 </head>
-
 
 <body hx-ext="head-support">
     <header>
-        <h1 hx-get="/main/index" hx-replace-url="/" hx-target="#main">Knawledger</h1>
+        <h1 hx-get="/main/index" hx-replace-url="/" hx-target="#main">
+            {{ page_title }}
+        </h1>
     </header>
 
     <aside class="sidebar">
@@ -29,5 +30,5 @@
         <ul id="sidebar-document-container" hx-trigger="load" hx-get="/side" hx-swap="innerHTML"></ul>
     </aside>
 
-    <main id="main"> {{ main }} </main>
+    <main id="main">{{ main }}</main>
 </body>

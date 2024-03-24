@@ -44,16 +44,83 @@ pub async fn index_page(
 
     let doc_path = state.db.get_index_path().await?;
     let Some(path) = doc_path else {
-        return Ok(Response::new(String::from("Hello world")));
+        let template = state.context.get_template("index")?;
+        let page_title = state.config.title.as_deref().unwrap_or(DEFAULT_TITLE);
+        let main = template
+            .render(context! { title => "Knawledger", page_title => page_title,  main => "" })?;
+        return Ok(htmx_response(main));
     };
 
     let index = DocumentData::read_from_disk(path)?;
     let title = index.meta.title.as_deref().unwrap_or(DEFAULT_TITLE);
     let main = markdown::to_html_with_options(&index.content, &Options::gfm()).unwrap();
     let template = state.context.get_template("index")?;
-    let main = template.render(context! { title => title, main => main })?;
+    let page_title = state.config.title.as_deref().unwrap_or(DEFAULT_TITLE);
+    let main =
+        template.render(context! { title => title, page_title => page_title,  main => main })?;
 
     Ok(htmx_response(main))
+}
+
+pub async fn document_page(
+    state: axum::extract::State<State>,
+    path: axum::extract::Path<String>,
+) -> Result<impl IntoResponse, KnawledgeError> {
+    let uuid = uuid::Uuid::from_str(&path);
+
+    let Ok(uuid) = uuid else {
+        let Some(path) = state.db.get_doc_path_by_custom_id(&path).await? else {
+            return Err(KnawledgeError::NotFound(path.0));
+        };
+
+        info!("Reading {path}");
+
+        let mut document = DocumentData::read_from_disk(path)?;
+
+        document.content =
+            markdown::to_html_with_options(&document.content, &Options::gfm()).unwrap();
+
+        let title = document
+            .meta
+            .title
+            .as_deref()
+            .unwrap_or(DEFAULT_TITLE)
+            .to_string();
+
+        let main = MainDocumentHtmx::new_page(document).to_htmx();
+
+        let page = state.context.get_template("index")?;
+        let page_title = state.config.title.as_deref().unwrap_or(DEFAULT_TITLE);
+        let page =
+            page.render(context! { title => title, page_title => page_title, main => main })?;
+
+        return Ok(htmx_response(page));
+    };
+
+    let doc_path = state.db.get_doc_path(uuid).await?;
+
+    let Some(path) = doc_path else {
+        return Err(KnawledgeError::NotFound(path.0.to_string()));
+    };
+
+    info!("Reading {path}");
+
+    let mut document = DocumentData::read_from_disk(path)?;
+    document.content = markdown::to_html_with_options(&document.content, &Options::gfm()).unwrap();
+
+    let title = document
+        .meta
+        .title
+        .as_deref()
+        .unwrap_or(DEFAULT_TITLE)
+        .to_string();
+
+    let main = MainDocumentHtmx::new_page(document).to_htmx();
+    let template = state.context.get_template("index")?;
+
+    let response = template.render(context! { title => title, main => main })?;
+
+    Ok(htmx_response(response))
 }
 
 pub async fn document_main(
@@ -85,7 +152,7 @@ pub async fn document_main(
         }
 
         let Some(path) = state.db.get_index_path().await? else {
-            return Ok(Response::new(String::from("Hello world")));
+            return Ok(Response::new(String::new()));
         };
 
         let response = read_data(&path)?;
@@ -97,65 +164,6 @@ pub async fn document_main(
     };
 
     let response = read_data(&path)?;
-    Ok(htmx_response(response))
-}
-
-pub async fn document_page(
-    state: axum::extract::State<State>,
-    path: axum::extract::Path<String>,
-) -> Result<impl IntoResponse, KnawledgeError> {
-    let uuid = uuid::Uuid::from_str(&path);
-
-    let Ok(uuid) = uuid else {
-        let Some(path) = state.db.get_doc_path_by_custom_id(&path).await? else {
-            return Err(KnawledgeError::NotFound(path.0));
-        };
-
-        info!("Reading {path}");
-
-        let mut document = DocumentData::read_from_disk(path)?;
-
-        document.content =
-            markdown::to_html_with_options(&document.content, &Options::gfm()).unwrap();
-
-        let title = document
-            .meta
-            .title
-            .as_deref()
-            .unwrap_or(DEFAULT_TITLE)
-            .to_string();
-
-        let main = MainDocumentHtmx::new_page(document).to_htmx();
-
-        let page = state.context.get_template("index")?;
-        let page = page.render(context! { title => title, main => main })?;
-
-        return Ok(htmx_response(page));
-    };
-
-    let doc_path = state.db.get_doc_path(uuid).await?;
-
-    let Some(path) = doc_path else {
-        return Err(KnawledgeError::NotFound(path.0.to_string()));
-    };
-
-    info!("Reading {path}");
-
-    let mut document = DocumentData::read_from_disk(path)?;
-    document.content = markdown::to_html_with_options(&document.content, &Options::gfm()).unwrap();
-
-    let title = document
-        .meta
-        .title
-        .as_deref()
-        .unwrap_or(DEFAULT_TITLE)
-        .to_string();
-
-    let main = MainDocumentHtmx::new_page(document).to_htmx();
-    let template = state.context.get_template("index")?;
-
-    let response = template.render(context! { title => title, main => main })?;
-
     Ok(htmx_response(response))
 }
 

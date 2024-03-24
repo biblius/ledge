@@ -1,4 +1,4 @@
-use crate::{db::Database, notifiy::NotifierHandle};
+use crate::{config::Config, db::Database, notifiy::NotifierHandle};
 use minijinja::Environment;
 use std::sync::Arc;
 
@@ -13,11 +13,12 @@ pub struct State {
 
     pub db: Database,
 
-    pub tx: Arc<NotifierHandle>,
+    pub config: Config,
+    // pub tx: Arc<NotifierHandle>,
 }
 
 impl State {
-    pub async fn new(db: Database, tx: NotifierHandle) -> Self {
+    pub fn new(db: Database, config: Config) -> Self {
         let mut context = Environment::new();
 
         context
@@ -27,7 +28,7 @@ impl State {
         Self {
             context,
             db,
-            tx: Arc::new(tx),
+            config, // tx: Arc::new(tx),
         }
     }
 }

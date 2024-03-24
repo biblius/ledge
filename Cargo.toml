@@ -9,6 +9,7 @@ version = "0.1.0"
 async-recursion = "1.0.5"
 axum = "0.7.4"
 chrono = { version = "0.4.33", features = ["serde"] }
+clap = { version = "4.5.3", features = ["derive", "debug"] }
 dotenv = "0.15.0"
 futures = "0.3.30"
 htmxpress = "0.1.0"

@@ -276,4 +276,13 @@ impl Database {
             .await?;
         Ok(())
     }
+
+    /// Delete any directories from the DB not in `paths`.
+    pub async fn trim_unused(&self, paths: &[String]) -> Result<(), KnawledgeError> {
+        let paths = paths.join(",");
+        sqlx::query!("DELETE FROM directories WHERE path NOT IN (SELECT path FROM directories WHERE path = $1)", paths)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
 }

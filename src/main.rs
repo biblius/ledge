@@ -1,12 +1,8 @@
+use clap::Parser;
 use std::{collections::HashSet, num::NonZeroUsize};
 use tracing::{info, Level};
 
-use crate::{
-    db::Database,
-    document::process_directory,
-    notifiy::{NotifierHandle, NotifyHandler},
-    state::State,
-};
+use crate::{config::Config, db::Database, document::process_directory, state::State};
 
 pub const FILES_PER_THREAD: usize = 128;
 
@@ -15,6 +11,7 @@ lazy_static::lazy_static! {
 }
 
 pub mod chunk;
+pub mod config;
 pub mod db;
 pub mod document;
 pub mod error;
@@ -36,32 +33,38 @@ async fn main() {
 
     let addr = format!("{host}:{port}");
 
-    let directories = vec![String::from("content"), String::from("foo")];
+    let config = Config::parse();
 
     let database = Database::new(&db_url).await;
 
-    for dir in directories.iter() {
+    // Trim any directories that should not be loaded
+    database
+        .trim_unused(&config.directories)
+        .await
+        .expect("could not trim directories");
+
+    for dir in config.directories.iter() {
         process_directory(&database, dir, None)
             .await
             .expect("unable to process directory");
     }
 
-    let (tx, rx) = std::sync::mpsc::channel();
+    // let (tx, rx) = std::sync::mpsc::channel();
 
-    let roots = database
-        .list_root_paths()
-        .await
-        .expect("unable to process roots")
-        .into_iter()
-        .collect::<HashSet<_>>();
+    // let roots = database
+    //     .list_root_paths()
+    //     .await
+    //     .expect("unable to process roots")
+    //     .into_iter()
+    //     .collect::<HashSet<_>>();
 
-    let notifier = NotifyHandler::new(database.clone(), roots, rx);
+    // let notifier = NotifyHandler::new(database.clone(), roots, rx);
 
-    let handle = notifier.run().expect("could not start watcher");
+    // let handle = notifier.run().expect("could not start watcher");
 
-    let handle = NotifierHandle { tx, handle };
+    // let handle = NotifierHandle { tx, handle };
 
-    let state = State::new(database.clone(), handle).await;
+    let state = State::new(database.clone(), config);
 
     info!("Now listening on {addr}");
 
