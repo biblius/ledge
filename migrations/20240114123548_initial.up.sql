@@ -22,6 +22,7 @@ CREATE TABLE directories (
     id UUID PRIMARY KEY NOT NULL DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     path TEXT NOT NULL,
+    alias TEXT,
     parent UUID REFERENCES directories(id) ON DELETE CASCADE ON UPDATE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -40,5 +41,13 @@ CREATE TABLE documents (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE sessions (
+    id UUID PRIMARY KEY NOT NULL,
+    expires TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 SELECT manage_updated_at('directories');
 SELECT manage_updated_at('documents');
+SELECT manage_updated_at('sessions');

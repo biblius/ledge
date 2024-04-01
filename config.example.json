@@ -1,0 +1,8 @@
+{
+  "title": "My Knawledger",
+  "directories": { "My Foo Directory": "foo", "My content": "content" },
+  "admin": {
+    "cookie_domain": "localhost",
+    "password_hash": "Super secret Argon2 hash, e.g. `echo -n 'supersecret' | argon2 secretsalt -l 32`"
+  }
+}

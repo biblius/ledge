@@ -16,8 +16,8 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use crate::{
-    db::Database,
-    document::{process_directory, Document, DocumentMeta},
+    document::db::Database,
+    document::{models::Document, process_directory, DocumentMeta},
     error::KnawledgeError,
 };
 
@@ -96,10 +96,7 @@ impl NotifyHandler {
                         // dir is a child in a watched directory
                         if let Some(parent) = parent {
                             info!("Syncing directory {path} with database");
-                            self.db
-                                .insert_dir(&path, name, Some(parent.id))
-                                .await
-                                .unwrap();
+                            self.db.insert_dir(&path, name, parent.id).await.unwrap();
                         }
                     }
                     EventKind::Create(CreateKind::File) => {
@@ -116,7 +113,7 @@ impl NotifyHandler {
                         }
                         let path = event.paths[0].display().to_string();
                         info!("Removing file {path} from database");
-                        self.db.remove_doc(&path).await.unwrap();
+                        self.db.remove_doc_by_path(&path).await.unwrap();
                     }
                     EventKind::Remove(RemoveKind::Folder) => {
                         if event.paths.is_empty() {
@@ -150,13 +147,9 @@ impl NotifyHandler {
                                     continue;
                                 };
 
-                                process_directory(
-                                    &self.db,
-                                    &format!("{parent}/{child}"),
-                                    Some(root.id),
-                                )
-                                .await
-                                .unwrap();
+                                process_directory(&self.db, &format!("{parent}/{child}"), root.id)
+                                    .await
+                                    .unwrap();
 
                                 break;
                             }
@@ -190,9 +183,9 @@ impl NotifyHandler {
                                 // In case of roots, rescan whole directory
                                 if self.roots.contains(&path) {
                                     info!("Adding root {path} to database");
-                                    process_directory(&self.db, path, None).await.unwrap();
-                                // In case of children, find the corresponding root
-                                // and process directories from there to preserve IDs
+                                    // process_root_directory(&self.db, path, None).await.unwrap();
+                                    // In case of children, find the corresponding root
+                                    // and process directories from there to preserve IDs
                                 } else if event.paths[0].is_dir() {
                                     let mut path = path.as_str();
                                     while let Some((parent, child)) = path.rsplit_once('/') {
@@ -210,7 +203,7 @@ impl NotifyHandler {
                                         process_directory(
                                             &self.db,
                                             &format!("{parent}/{child}"),
-                                            Some(root.id),
+                                            root.id,
                                         )
                                         .await
                                         .unwrap();
@@ -226,7 +219,7 @@ impl NotifyHandler {
                                 info!("Removing file/dir {path} from database");
 
                                 self.db.remove_dir(&path).await.unwrap();
-                                self.db.remove_doc(&path).await.unwrap();
+                                self.db.remove_doc_by_path(&path).await.unwrap();
                             }
                         }
                     }
@@ -249,8 +242,10 @@ impl NotifyHandler {
             return;
         };
 
+        let doc = Document::new(dir.id, name.to_string(), path.to_string());
+
         // Here we already have the canonicalized path
-        let Ok((doc, meta)) = Document::new(dir.id, name.to_string(), path.to_string()) else {
+        let Ok(meta) = DocumentMeta::read_from_file(path) else {
             return;
         };
 

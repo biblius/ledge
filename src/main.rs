@@ -1,8 +1,13 @@
 use clap::Parser;
-use std::{collections::HashSet, num::NonZeroUsize};
-use tracing::{info, Level};
+use std::num::NonZeroUsize;
+use tracing::info;
 
-use crate::{config::Config, db::Database, document::process_directory, state::State};
+use crate::{
+    auth::{db::AuthDatabase, Auth},
+    config::{Config, StartArgs},
+    document::db::DocDatabase,
+    state::Documents,
+};
 
 pub const FILES_PER_THREAD: usize = 128;
 
@@ -10,7 +15,7 @@ lazy_static::lazy_static! {
     pub static ref MAX_THREADS: usize = std::thread::available_parallelism().unwrap_or(NonZeroUsize::new(1).unwrap()).into();
 }
 
-pub mod chunk;
+pub mod auth;
 pub mod config;
 pub mod db;
 pub mod document;
@@ -23,31 +28,33 @@ pub mod state;
 #[tokio::main]
 async fn main() {
     dotenv::dotenv().ok();
+    let StartArgs {
+        config_path,
+        address: host,
+        port,
+        log_level: level,
+    } = StartArgs::parse();
 
-    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
+    tracing_subscriber::fmt().with_max_level(level).init();
 
     let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
+    let db_pool = db::create_pool(&db_url).await;
 
-    let host = "127.0.0.1";
-    let port = "3002";
+    db::migrate(&db_pool).await;
 
     let addr = format!("{host}:{port}");
 
-    let config = Config::parse();
+    let Config {
+        title,
+        directories,
+        admin,
+    } = Config::read(config_path).expect("invalid config file");
 
-    let database = Database::new(&db_url).await;
+    let document_db = DocDatabase::new(db_pool.clone()).await;
+    let auth_db = AuthDatabase::new(db_pool.clone()).await;
 
-    // Trim any directories that should not be loaded
-    database
-        .trim_unused(&config.directories)
-        .await
-        .expect("could not trim directories");
-
-    for dir in config.directories.iter() {
-        process_directory(&database, dir, None)
-            .await
-            .expect("unable to process directory");
-    }
+    let state = Documents::new(document_db.clone(), title, directories);
+    state.sync().await.expect("error in state sync");
 
     // let (tx, rx) = std::sync::mpsc::channel();
 
@@ -64,15 +71,13 @@ async fn main() {
 
     // let handle = NotifierHandle { tx, handle };
 
-    let state = State::new(database.clone(), config);
-
     info!("Now listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("error while starting TCP listener");
 
-    let router = router::router(state);
+    let router = router::router(state, admin.map(|config| Auth::new(auth_db, config)));
 
     axum::serve(listener, router)
         .await

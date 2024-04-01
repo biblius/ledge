@@ -85,7 +85,7 @@ impl SidebarContainer {
 #[attrs(class = "sidebar-document")]
 #[hx_get("/main/{}", path)]
 #[hx("target" = "#main")]
-#[attr("hx-push-url" = "/{}", path)]
+#[attr("hx-push-url" = "/document/{}", path)]
 pub struct SidebarDocumentHtmx {
     #[element("h2")]
     pub title: String,
