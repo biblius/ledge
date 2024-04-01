@@ -6,6 +6,7 @@ use tracing::error;
 
 use crate::auth::AuthError;
 use crate::llm;
+use crate::auth::AuthError;
 
 #[derive(Debug, Error)]
 pub enum LedgeknawError {
@@ -58,6 +59,23 @@ pub enum LedgeknawError {
 
     #[error("Query validation error: {0}")]
     QueryValidation(String),
+    #[error("JSON error: {0}")]
+    SerdeJson(#[from] serde_json::Error),
+
+    #[error("Argon2 hash error: {0}")]
+    A2Hash(argon2::Error),
+
+    #[error("Argon2 validation error: {0}")]
+    A2Validation(argon2::password_hash::Error),
+
+    #[error("Authentication: {0}")]
+    Auth(#[from] AuthError),
+}
+
+impl From<argon2::Error> for KnawledgeError {
+    fn from(value: argon2::Error) -> Self {
+        Self::A2Hash(value)
+    }
 }
 
 impl From<argon2::Error> for LedgeknawError {
