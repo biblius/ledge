@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 /// Database model
 #[derive(Debug, Default)]
 pub struct Document {
@@ -24,7 +26,7 @@ impl Document {
 /// Used for querying both files and directories.
 /// The type is either 'f' or 'd'.
 /// Only directories have the parent field.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct DirectoryEntry {
     pub id: uuid::Uuid,
     pub name: String,

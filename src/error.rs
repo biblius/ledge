@@ -47,6 +47,9 @@ pub enum KnawledgeError {
     #[error("Argon2 validation error: {0}")]
     A2Validation(argon2::password_hash::Error),
 
+    #[error("Http: {0}")]
+    Http(#[from] axum::http::Error),
+
     #[error("Authentication: {0}")]
     Auth(#[from] AuthError),
 }
@@ -73,7 +76,7 @@ impl IntoResponse for KnawledgeError {
             // This one can only occur on startup if an invalid hash is given
             | KE::A2Hash(_)
             | KE::Sqlx(_)
-            | KE::SerdeYaml(_) => {
+            | KE::SerdeYaml(_) | KE::Http(_)=> {
                 (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
             }
             KE::DoesNotExist(e) => (StatusCode::NOT_FOUND, e).into_response(),

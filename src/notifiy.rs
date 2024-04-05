@@ -16,14 +16,14 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use crate::{
-    document::db::Database,
+    document::db::DocumentDb,
     document::{models::Document, process_directory, DocumentMeta},
     error::KnawledgeError,
 };
 
 #[derive(Debug)]
 pub struct NotifyHandler {
-    db: Database,
+    db: DocumentDb,
     roots: HashSet<String>,
     _rx: Receiver<NotifierMessage>,
 }
@@ -41,7 +41,7 @@ pub enum NotifierMessage {
 }
 
 impl NotifyHandler {
-    pub fn new(db: Database, roots: HashSet<String>, rx: Receiver<NotifierMessage>) -> Self {
+    pub fn new(db: DocumentDb, roots: HashSet<String>, rx: Receiver<NotifierMessage>) -> Self {
         Self { db, roots, _rx: rx }
     }
 
@@ -231,7 +231,7 @@ impl NotifyHandler {
         Ok(handle)
     }
 
-    async fn process_file(db: &Database, path: impl AsRef<str> + Send + Sync) {
+    async fn process_file(db: &DocumentDb, path: impl AsRef<str> + Send + Sync) {
         let path = path.as_ref();
 
         let Some((dir, name)) = path.rsplit_once('/') else {

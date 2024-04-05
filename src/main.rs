@@ -5,7 +5,7 @@ use tracing::info;
 use crate::{
     auth::{db::AuthDatabase, Auth},
     config::{Config, StartArgs},
-    document::db::DocDatabase,
+    document::db::DocumentDb,
     state::Documents,
 };
 
@@ -20,7 +20,6 @@ pub mod config;
 pub mod db;
 pub mod document;
 pub mod error;
-pub mod htmx;
 pub mod notifiy;
 pub mod router;
 pub mod state;
@@ -50,7 +49,7 @@ async fn main() {
         admin,
     } = Config::read(config_path).expect("invalid config file");
 
-    let document_db = DocDatabase::new(db_pool.clone()).await;
+    let document_db = DocumentDb::new(db_pool.clone()).await;
     let auth_db = AuthDatabase::new(db_pool.clone()).await;
 
     let state = Documents::new(document_db.clone(), title, directories);

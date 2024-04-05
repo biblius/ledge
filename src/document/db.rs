@@ -4,11 +4,11 @@ use sqlx::PgPool;
 use tracing::debug;
 
 #[derive(Debug, Clone)]
-pub struct DocDatabase {
+pub struct DocumentDb {
     pool: sqlx::PgPool,
 }
 
-impl DocDatabase {
+impl DocumentDb {
     pub async fn new(pool: PgPool) -> Self {
         Self { pool }
     }
@@ -94,12 +94,12 @@ impl DocDatabase {
         .map_err(KnawledgeError::from)
     }
 
-    pub async fn get_index_path(&self) -> Result<Option<String>, KnawledgeError> {
+    pub async fn get_index_id_path(&self) -> Result<Option<(uuid::Uuid, String)>, KnawledgeError> {
         Ok(
-            sqlx::query!("SELECT path FROM documents WHERE file_name = 'index.md' LIMIT 1")
+            sqlx::query!("SELECT id, path FROM documents WHERE file_name = 'index.md' LIMIT 1")
                 .fetch_optional(&self.pool)
                 .await?
-                .map(|el| el.path),
+                .map(|el| (el.id, el.path)),
         )
     }
 
@@ -110,16 +110,17 @@ impl DocDatabase {
             .map(|el| el.path))
     }
 
-    pub async fn get_doc_path_by_custom_id(
+    pub async fn get_doc_id_path_by_custom_id(
         &self,
         custom_id: &str,
-    ) -> Result<Option<String>, KnawledgeError> {
-        Ok(
-            sqlx::query!("SELECT path FROM documents WHERE custom_id = $1", custom_id)
-                .fetch_optional(&self.pool)
-                .await?
-                .map(|el| el.path),
+    ) -> Result<Option<(uuid::Uuid, String)>, KnawledgeError> {
+        Ok(sqlx::query!(
+            "SELECT id, path FROM documents WHERE custom_id = $1",
+            custom_id
         )
+        .fetch_optional(&self.pool)
+        .await?
+        .map(|el| (el.id, el.path)))
     }
 
     pub async fn list_root_paths(&self) -> Result<Vec<String>, KnawledgeError> {
@@ -168,26 +169,12 @@ impl DocDatabase {
         .map_err(KnawledgeError::from)
     }
 
-    pub async fn list_roots_with_entries(&self) -> Result<Vec<DirectoryEntry>, KnawledgeError> {
+    pub async fn list_roots(&self) -> Result<Vec<DirectoryEntry>, KnawledgeError> {
         sqlx::query_as_unchecked!(
             DirectoryEntry,
             r#"
-                WITH
-                roots AS
-                    (SELECT dir.id, dir.parent, dir.alias AS name, 'd' AS type, NULL AS title, NULL AS custom_id
-                    FROM directories dir WHERE dir.parent IS NULL),
-                docs AS
-                    (SELECT d.id, d.directory AS parent, d.file_name AS name, 'f' AS type, d.title, d.custom_id
-                    FROM documents d INNER JOIN roots ON d.directory = roots.id),
-                dirs AS
-                    (SELECT d.id, d.parent, d.name, 'd' AS type, NULL as title, NULL AS custom_id
-                    FROM directories d INNER JOIN roots ON d.parent = roots.id)
-                SELECT * FROM docs
-                UNION
-                SELECT * FROM dirs
-                UNION
-                SELECT * FROM roots
-                ORDER BY parent DESC
+                SELECT id, parent, name, 'd' AS type, alias AS title, NULL AS custom_id
+                FROM directories WHERE parent IS NULL
         "#
         )
         .fetch_all(&self.pool)
@@ -207,7 +194,7 @@ impl DocDatabase {
                 INNER JOIN directories dir
                 ON doc.directory = dir.id AND dir.id = $1
                 UNION
-                SELECT id, parent, name, 'd' AS type, NULL AS title, NULL AS custom_id
+                SELECT id, parent, name, 'd' AS type, alias AS title, NULL AS custom_id
                 FROM directories WHERE parent = $1
         "#,
             id

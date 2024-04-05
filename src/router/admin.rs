@@ -1,4 +1,3 @@
-use super::htmx_response;
 use crate::{
     auth::{Auth, AuthError},
     error::KnawledgeError,
@@ -71,7 +70,7 @@ async fn login(
 
 async fn sync(state: axum::extract::State<Documents>) -> Result<impl IntoResponse, KnawledgeError> {
     state.sync().await?;
-    Ok(htmx_response(String::from("Successfully synced")))
+    Ok(())
 }
 
 async fn session_check(

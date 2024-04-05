@@ -2,3 +2,5 @@
 .env
 .env.production
 config.json
+web/dist
+web/node_modules

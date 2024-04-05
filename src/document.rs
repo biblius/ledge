@@ -1,10 +1,10 @@
-use self::db::Database;
+use self::db::DocumentDb;
 use self::models::Document;
 use crate::error::KnawledgeError;
 use crate::{FILES_PER_THREAD, MAX_THREADS};
 use async_recursion::async_recursion;
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::fs::{self, DirEntry};
 use std::path::PathBuf;
@@ -17,18 +17,24 @@ pub mod db;
 pub mod models;
 
 /// Document read from the fs with its metadata.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
 pub struct DocumentData {
+    /// Database ID
+    pub id: uuid::Uuid,
     /// Document markdown content
     pub content: String,
+    /// Metadata
     pub meta: DocumentMeta,
 }
 
 impl DocumentData {
-    pub fn read_from_disk(path: impl AsRef<Path>) -> Result<Self, KnawledgeError> {
+    pub fn read_from_disk(id: uuid::Uuid, path: impl AsRef<Path>) -> Result<Self, KnawledgeError> {
         debug!("Reading {}", path.as_ref().display());
 
-        let mut data = Self::default();
+        let mut data = Self {
+            id,
+            ..Default::default()
+        };
         let content = fs::read_to_string(path)?;
         let (meta, content) = DocumentMeta::read_from_str(&content)?;
         data.content = content.to_string();
@@ -37,11 +43,10 @@ impl DocumentData {
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct DocumentMeta {
     /// A user specified identifier for the document for
     /// URLs on Knawledger. Prioritised over the document UUID.
-    #[serde(rename = "id")]
     pub custom_id: Option<String>,
     pub title: Option<String>,
     pub reading_time: Option<i32>,
@@ -141,7 +146,7 @@ pub struct Directory {
 
 #[async_recursion]
 pub async fn process_directory(
-    db: &Database,
+    db: &DocumentDb,
     path: impl AsRef<Path> + 'async_recursion + Send,
     parent_id: uuid::Uuid,
 ) -> Result<(), KnawledgeError> {
@@ -175,7 +180,7 @@ pub async fn process_directory(
 }
 
 pub async fn process_root_directory(
-    db: &Database,
+    db: &DocumentDb,
     path: impl AsRef<Path>,
     alias: &str,
 ) -> Result<(), KnawledgeError> {
@@ -206,7 +211,7 @@ pub async fn process_root_directory(
 }
 
 async fn read_and_store_directory_files(
-    db: &Database,
+    db: &DocumentDb,
     entries: &[DirEntry],
     directory_entry: &Directory,
 ) -> Result<(), KnawledgeError> {

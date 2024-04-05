@@ -1,4 +1,4 @@
-use crate::{document::db::DocDatabase, document::process_root_directory, error::KnawledgeError};
+use crate::{document::db::DocumentDb, document::process_root_directory, error::KnawledgeError};
 use minijinja::Environment;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use tokio::sync::RwLock;
@@ -16,7 +16,7 @@ lazy_static::lazy_static! {
 pub struct Documents {
     pub context: Environment<'static>,
 
-    pub db: DocDatabase,
+    pub db: DocumentDb,
 
     /// The document title for the front end
     pub title: Arc<Option<String>>,
@@ -28,7 +28,7 @@ pub struct Documents {
 
 impl Documents {
     pub fn new(
-        db: DocDatabase,
+        db: DocumentDb,
         title: Option<String>,
         directories: HashMap<String, String>,
     ) -> Self {
