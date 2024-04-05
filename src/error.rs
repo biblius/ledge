@@ -68,6 +68,9 @@ pub enum LedgeknawError {
     #[error("Argon2 validation error: {0}")]
     A2Validation(argon2::password_hash::Error),
 
+    #[error("Http: {0}")]
+    Http(#[from] axum::http::Error),
+
     #[error("Authentication: {0}")]
     Auth(#[from] AuthError),
 }
