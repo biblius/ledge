@@ -1,8 +1,8 @@
 <script>
-  import DocumentData from './lib/DocumentData.svelte'
-  import SidebarEntry from './lib/SidebarEntry.svelte'
-  import showdown from 'showdown'
-  import { onMount, setContext } from 'svelte'
+  import DocumentData from "./lib/DocumentData.svelte";
+  import SidebarEntry from "./lib/SidebarEntry.svelte";
+  import showdown from "showdown";
+  import { onMount, setContext } from "svelte";
 
   // Handle forward/back buttons
   window.addEventListener("popstate", (event) => {
@@ -16,13 +16,18 @@
 
   let id, content, meta;
 
-  const baseUrl = 'http://localhost:3030';
+  const baseUrl = "http://127.0.0.1:3030";
 
   // Set the document ID to the one in the URL
   const pageUrl = window.location.href;
   const documentId = pageUrl.substring(baseUrl.length + 1);
 
-  async function loadDocumentData(docId) {
+  /**
+   * Fetch a document from the backend and display it on the page.
+   * @param {?string} docId The UUID of the document
+   * @param {?string} customId The user specified custom ID used to display nicer URLs.
+   */
+  async function loadDocumentData(docId, customId) {
     // Prevent loading the same document
     if (id && id === docId) {
       return;
@@ -37,7 +42,6 @@
 
     const response = await fetch(url);
 
-
     if (response.status === 404) {
       if (docId) {
         // TODO: Popup
@@ -45,33 +49,34 @@
       }
 
       // In case of no index, return the default page
-      meta = { title: 'Knawledger' };
-      content = 'This is my Knawledge.'
+      meta = { title: "Knawledger" };
+      content = "This is my Knawledge.";
     }
 
     const data = await response.json();
 
     // Display the contents
-    displayMain(data)
+    displayMain(data);
 
     // Push state to history
     if (docId) {
-      // FIXME
-      history.pushState(data, '', url.replace('3030', '5173').replace('/document', ''));
+      let historyUrl = url.replace("/document", "");
+      if (customId) {
+        historyUrl = historyUrl.replace(docId, customId);
+      }
+      history.pushState(data, "", historyUrl);
     }
-  };
+  }
 
   /**
    * Set the id, meta and content to the currently selected document
    * @param {{id: string, meta: object, content: string}} documentData
    */
   function displayMain(documentData) {
-    const converter = new showdown.Converter(
-      {
-        ghCodeBlocks: true,
-        ghCompatibleHeaderId: true,
-      }
-    );
+    const converter = new showdown.Converter({
+      ghCodeBlocks: true,
+      ghCompatibleHeaderId: true,
+    });
 
     id = documentData.id;
     meta = documentData.meta;
@@ -80,7 +85,7 @@
 
   async function loadSidebar() {
     const res = await fetch(`${baseUrl}/side`);
-    return (await res.json()).filter(el => el.name !== 'index.md');
+    return (await res.json()).filter((el) => el.name !== "index.md");
   }
 
   function getCurrentMainId() {
@@ -89,37 +94,47 @@
 
   /**
    * Unselect the last, then select the currently focused entry in the sidebar
-   * @param {string} entryId 
+   * @param {string} entryId
    */
   function selectListItem(entryId) {
-    const listItem = document.getElementById(id); 
+    const listItem = document.getElementById(`side_${id}`);
     if (listItem) {
-      listItem.classList.remove('sidebar-selected');
+      listItem.classList.remove("sidebar-selected");
     }
 
-    const newSelected = document.getElementById(entryId);
+    const newSelected = document.getElementById(`side_${entryId}`);
     if (newSelected) {
-      newSelected.classList.add('sidebar-selected');
+      newSelected.classList.add("sidebar-selected");
     }
   }
 
-  setContext('documentMain', { loadDocumentData, getCurrentMainId, selectListItem });
+  setContext("documentMain", {
+    loadDocumentData,
+    getCurrentMainId,
+    selectListItem,
+  });
 
   onMount(async () => {
-    loadDocumentData(documentId);
+    loadDocumentData(documentId, null);
   });
 </script>
 
 <nav>
   <h1>
-    Knawledger
+    <a href="/"> Knawledger </a>
   </h1>
   {#await loadSidebar()}
     Loading...
   {:then entries}
     <ul>
       {#each entries as entry}
-        <SidebarEntry id={entry.id} name={entry.name} title={entry.title} type={entry.type} customId={entry.custom_id}/>
+        <SidebarEntry
+          id={entry.id}
+          name={entry.name}
+          title={entry.title}
+          type={entry.type}
+          custom_id={entry.custom_id}
+        />
       {/each}
     </ul>
   {/await}
@@ -133,14 +148,15 @@
   nav {
     position: sticky;
     left: 0;
+    top: 0;
     margin: 0 0 1rem 0;
     padding: 0 2rem;
     width: 25%;
+    height: 100%;
   }
 
   h1 {
     width: 100%;
-    height: fit-content;
     margin: 3rem 0;
     font-size: 3.2em;
     text-align: center;
@@ -148,7 +164,7 @@
 
   @media screen and (max-width: 1000px) {
     h1 {
-      font-size: 1.6em; 
+      font-size: 1.6em;
     }
   }
 
@@ -160,9 +176,8 @@
   main {
     margin: 3rem 0;
     padding: 2rem;
-    border: 1px solid rgba(255, 255, 255, .1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 1rem;
     width: 50%;
   }
-
 </style>

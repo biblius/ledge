@@ -8,7 +8,11 @@ use crate::{
 use axum::{http::Method, response::IntoResponse, routing::get, Json, Router};
 use axum_macros::debug_handler;
 use std::str::FromStr;
-use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
+use tower_http::{
+    cors::CorsLayer,
+    services::{ServeDir, ServeFile},
+    trace::TraceLayer,
+};
 use tracing::info;
 
 use self::admin::admin_router;
@@ -33,12 +37,15 @@ pub fn router(state: Documents, auth: Option<Auth>) -> Router {
 
 fn public_router(state: Documents) -> Router {
     Router::new()
-        .nest_service("/public", ServeDir::new("public"))
+        .nest_service(
+            "/",
+            ServeDir::new("dist").fallback(ServeFile::new("dist/index.html")),
+        )
         .route("/meta/:id", get(document_meta))
         .route("/side", get(sidebar_init))
         .route("/side/:id", get(sidebar_entries))
         .route("/document", get(index))
-        .route("/document/:path", get(document))
+        .route("/document/:id", get(document))
         .with_state(state)
 }
 

@@ -1,21 +1,10 @@
 use crate::{document::db::DocumentDb, document::process_root_directory, error::KnawledgeError};
-use minijinja::Environment;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{trace, warn};
 
-lazy_static::lazy_static! {
-    pub static ref INDEX: String =
-        std::fs::read_to_string("public/index.html").expect("missing template index.html");
-
-    pub static ref UNAUTHORIZED: String =
-        std::fs::read_to_string("public/error/unauthorized.html").expect("missing template error/unauthorized.html");
-}
-
 #[derive(Debug, Clone)]
 pub struct Documents {
-    pub context: Environment<'static>,
-
     pub db: DocumentDb,
 
     /// The document title for the front end
@@ -32,18 +21,7 @@ impl Documents {
         title: Option<String>,
         directories: HashMap<String, String>,
     ) -> Self {
-        let mut context = Environment::new();
-
-        context
-            .add_template("index", &INDEX)
-            .expect("unable to load `index` template");
-
-        context
-            .add_template("unauthorized", &UNAUTHORIZED)
-            .expect("unable to load `unauthorized` template");
-
         Self {
-            context,
             db,
             title: Arc::new(title),
             directories: Arc::new(RwLock::new(directories)),

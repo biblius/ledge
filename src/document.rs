@@ -47,6 +47,7 @@ impl DocumentData {
 pub struct DocumentMeta {
     /// A user specified identifier for the document for
     /// URLs on Knawledger. Prioritised over the document UUID.
+    #[serde(alias = "id")]
     pub custom_id: Option<String>,
     pub title: Option<String>,
     pub reading_time: Option<i32>,
@@ -294,7 +295,6 @@ async fn read_and_store_directory_files(
 fn process_files(
     directory: uuid::Uuid,
     file_paths: Vec<PathBuf>,
-    //files: &mut Vec<(Document, DocumentMeta)>,
 ) -> Result<Vec<(Document, DocumentMeta)>, KnawledgeError> {
     let files_total = file_paths.len();
     let mut files_remaining = files_total;

@@ -17,9 +17,6 @@ pub enum KnawledgeError {
     #[error("Parse int: {0}")]
     Parse(#[from] ParseIntError),
 
-    #[error("Template: {0}")]
-    MiniJinja(#[from] minijinja::Error),
-
     #[error("Not found: {0}")]
     NotFound(String),
 
@@ -68,8 +65,7 @@ impl IntoResponse for KnawledgeError {
 
         match self {
             KE::NotFound(e) => (StatusCode::NOT_FOUND, e).into_response(),
-            KE::MiniJinja(_)
-            | KE::IO(_)
+            KE::IO(_)
             | KE::Parse(_)
             | KE::Utf8(_)
             | KE::Watcher(_)

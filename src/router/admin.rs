@@ -12,7 +12,6 @@ use axum::{
     Router,
 };
 use axum_extra::{headers::Cookie, TypedHeader};
-use minijinja::context;
 use std::sync::Arc;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -22,11 +21,7 @@ pub(super) fn admin_router(documents: Documents, auth: Auth) -> Router {
     let router_static = Router::new()
         .nest_service("/", ServeDir::new("public/admin"))
         .with_state(documents.clone())
-        .layer(middleware::from_fn_with_state(auth.clone(), session_check))
-        .layer(middleware::from_fn_with_state(
-            documents.clone(),
-            error_page,
-        ));
+        .layer(middleware::from_fn_with_state(auth.clone(), session_check));
 
     let router_admin = Router::new()
         .route("/sync", get(sync))
@@ -96,28 +91,6 @@ async fn session_check(
     }
 
     let response = next.run(req).await;
-
-    Ok(response)
-}
-
-/// Used for the static admin router. Sets the response body to the the unauthorized html template.
-async fn error_page(
-    state: axum::extract::State<Documents>,
-    req: Request,
-    next: Next,
-) -> Result<impl IntoResponse, KnawledgeError> {
-    let response = next.run(req).await;
-
-    if let StatusCode::UNAUTHORIZED = response.status() {
-        let error_page = state.context.get_template("unauthorized")?;
-        let error_page = error_page.render(context! {})?;
-        return Ok((
-            StatusCode::UNAUTHORIZED,
-            [(header::CONTENT_TYPE, "text/html;charset=utf-8")],
-            error_page,
-        )
-            .into_response());
-    }
 
     Ok(response)
 }
