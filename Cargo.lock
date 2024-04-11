@@ -1489,39 +1489,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "knawledger"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "async-recursion",
- "axum 0.7.4",
- "axum",
- "axum-extra",
- "axum-macros",
- "base64 0.22.0",
- "chrono",
- "clap",
- "cookie",
- "dotenv",
- "futures",
- "htmxpress",
- "lazy_static",
- "notify",
- "qdrant-client",
- "serde",
- "serde_json",
- "serde_yaml",
- "sqlx",
- "thiserror",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "validify",
-]
-
-[[package]]
 name = "kqueue"
 version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -75,7 +75,7 @@ pub enum LedgeknawError {
     Auth(#[from] AuthError),
 }
 
-impl From<argon2::Error> for KnawledgeError {
+impl From<argon2::Error> for LedgeknawError {
     fn from(value: argon2::Error) -> Self {
         Self::A2Hash(value)
     }
