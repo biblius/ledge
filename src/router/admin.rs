@@ -1,6 +1,6 @@
 use crate::{
     auth::{Auth, AuthError},
-    error::KnawledgeError,
+    error::LedgeknawError,
     Documents,
 };
 use axum::{
@@ -50,7 +50,7 @@ fn admin_auth_router(auth: Arc<Auth>) -> Router {
 async fn login(
     auth: axum::extract::State<Arc<Auth>>,
     password: axum::extract::Json<String>,
-) -> Result<Response, KnawledgeError> {
+) -> Result<Response, LedgeknawError> {
     let result = auth.verify_password(&password);
 
     if !result {
@@ -63,7 +63,7 @@ async fn login(
     Ok((StatusCode::OK, [(header::SET_COOKIE, cookie.to_string())]).into_response())
 }
 
-async fn sync(state: axum::extract::State<Documents>) -> Result<impl IntoResponse, KnawledgeError> {
+async fn sync(state: axum::extract::State<Documents>) -> Result<impl IntoResponse, LedgeknawError> {
     state.sync().await?;
     Ok(())
 }
@@ -73,7 +73,7 @@ async fn session_check(
     cookie: TypedHeader<Cookie>,
     req: Request,
     next: Next,
-) -> Result<impl IntoResponse, KnawledgeError> {
+) -> Result<impl IntoResponse, LedgeknawError> {
     let cookie = cookie.0.get("SID");
 
     let Some(cookie) = cookie else {

@@ -1,4 +1,4 @@
-use crate::error::KnawledgeError;
+use crate::error::LedgeknawError;
 use clap::Parser;
 use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path};
@@ -31,7 +31,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn read(path: impl AsRef<Path>) -> Result<Self, KnawledgeError> {
+    pub fn read(path: impl AsRef<Path>) -> Result<Self, LedgeknawError> {
         let config = fs::read_to_string(path)?;
         Ok(serde_json::from_str(&config)?)
     }

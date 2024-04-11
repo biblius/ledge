@@ -1,5 +1,5 @@
 use self::{db::AuthDatabase, models::Session};
-use crate::{config::AdminConfig, error::KnawledgeError};
+use crate::{config::AdminConfig, error::LedgeknawError};
 use argon2::{password_hash::PasswordHashString, PasswordVerifier};
 use axum::{http::StatusCode, response::IntoResponse};
 use chrono::{Duration, Utc};
@@ -37,11 +37,11 @@ impl Auth {
             .is_ok()
     }
 
-    pub async fn session_check(&self, session_id: uuid::Uuid) -> Result<bool, KnawledgeError> {
+    pub async fn session_check(&self, session_id: uuid::Uuid) -> Result<bool, LedgeknawError> {
         self.db.session_check(session_id).await
     }
 
-    pub async fn create_session(&self) -> Result<Session, KnawledgeError> {
+    pub async fn create_session(&self) -> Result<Session, LedgeknawError> {
         let id = uuid::Uuid::new_v4();
         let expires = Utc::now().to_utc() + Duration::hours(1);
         Ok(self.db.insert_session(id, expires).await?)

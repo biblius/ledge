@@ -18,7 +18,7 @@ use tracing::{error, info};
 use crate::{
     document::db::DocumentDb,
     document::{models::Document, process_directory, DocumentMeta},
-    error::KnawledgeError,
+    error::LedgeknawError,
 };
 
 #[derive(Debug)]
@@ -45,7 +45,7 @@ impl NotifyHandler {
         Self { db, roots, _rx: rx }
     }
 
-    pub fn run(self) -> Result<JoinHandle<()>, KnawledgeError> {
+    pub fn run(self) -> Result<JoinHandle<()>, LedgeknawError> {
         let config = notify::Config::default().with_poll_interval(Duration::from_secs(1));
 
         let (tx, rx) = std::sync::mpsc::channel();

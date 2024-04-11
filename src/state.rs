@@ -1,4 +1,4 @@
-use crate::{document::db::DocumentDb, document::process_root_directory, error::KnawledgeError};
+use crate::{document::db::DocumentDb, document::process_root_directory, error::LedgeknawError};
 use std::{collections::HashMap, path::Path, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{trace, warn};
@@ -28,7 +28,7 @@ impl Documents {
         }
     }
 
-    pub async fn sync(&self) -> Result<(), KnawledgeError> {
+    pub async fn sync(&self) -> Result<(), LedgeknawError> {
         let directories = self.directories.read().await;
 
         let paths = directories

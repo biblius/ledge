@@ -1161,36 +1161,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "knawledger"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "async-recursion",
- "axum",
- "axum-extra",
- "axum-macros",
- "base64 0.22.0",
- "chrono",
- "clap",
- "cookie",
- "dotenv",
- "futures",
- "htmxpress",
- "lazy_static",
- "notify",
- "serde",
- "serde_json",
- "serde_yaml",
- "sqlx",
- "thiserror",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "kqueue"
 version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1217,6 +1187,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 dependencies = [
  "spin 0.5.2",
+]
+
+[[package]]
+name = "ledgeknaw"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "async-recursion",
+ "axum",
+ "axum-extra",
+ "axum-macros",
+ "base64 0.22.0",
+ "chrono",
+ "clap",
+ "cookie",
+ "dotenv",
+ "futures",
+ "htmxpress",
+ "lazy_static",
+ "notify",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

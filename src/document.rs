@@ -1,6 +1,6 @@
 use self::db::DocumentDb;
 use self::models::Document;
-use crate::error::KnawledgeError;
+use crate::error::LedgeknawError;
 use crate::{FILES_PER_THREAD, MAX_THREADS};
 use async_recursion::async_recursion;
 use chrono::{DateTime, Utc};
@@ -28,7 +28,7 @@ pub struct DocumentData {
 }
 
 impl DocumentData {
-    pub fn read_from_disk(id: uuid::Uuid, path: impl AsRef<Path>) -> Result<Self, KnawledgeError> {
+    pub fn read_from_disk(id: uuid::Uuid, path: impl AsRef<Path>) -> Result<Self, LedgeknawError> {
         debug!("Reading {}", path.as_ref().display());
 
         let mut data = Self {
@@ -46,7 +46,7 @@ impl DocumentData {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct DocumentMeta {
     /// A user specified identifier for the document for
-    /// URLs on Knawledger. Prioritised over the document UUID.
+    /// URLs on Ledgeknaw. Prioritised over the document UUID.
     #[serde(alias = "id")]
     pub custom_id: Option<String>,
     pub title: Option<String>,
@@ -64,7 +64,7 @@ impl DocumentMeta {
             .to_string()
     }
 
-    pub fn read_from_file(path: impl AsRef<Path>) -> Result<Self, KnawledgeError> {
+    pub fn read_from_file(path: impl AsRef<Path>) -> Result<Self, LedgeknawError> {
         debug!("Reading {}", path.as_ref().display());
         let content = fs::read_to_string(path)?;
         Ok(Self::read_from_str(&content)?.0)
@@ -72,7 +72,7 @@ impl DocumentMeta {
 
     /// Used when we already read the file from the fs.
     /// Returns the read meta and the remainder of the content.
-    pub fn read_from_str(content: &str) -> Result<(Self, &str), KnawledgeError> {
+    pub fn read_from_str(content: &str) -> Result<(Self, &str), LedgeknawError> {
         let mut data = Self {
             title: Self::find_title_from_h1(content),
             ..Default::default()
@@ -150,7 +150,7 @@ pub async fn process_directory(
     db: &DocumentDb,
     path: impl AsRef<Path> + 'async_recursion + Send,
     parent_id: uuid::Uuid,
-) -> Result<(), KnawledgeError> {
+) -> Result<(), LedgeknawError> {
     let full_path = path.as_ref().canonicalize()?.display().to_string();
     debug!("Loading {full_path}");
 
@@ -184,7 +184,7 @@ pub async fn process_root_directory(
     db: &DocumentDb,
     path: impl AsRef<Path>,
     alias: &str,
-) -> Result<(), KnawledgeError> {
+) -> Result<(), LedgeknawError> {
     let entries = fs::read_dir(&path)?
         .filter_map(Result::ok)
         .collect::<Vec<_>>();
@@ -215,7 +215,7 @@ async fn read_and_store_directory_files(
     db: &DocumentDb,
     entries: &[DirEntry],
     directory_entry: &Directory,
-) -> Result<(), KnawledgeError> {
+) -> Result<(), LedgeknawError> {
     // Collect md files
     let mut md_files = vec![];
     let mut file_names = vec![];
@@ -295,7 +295,7 @@ async fn read_and_store_directory_files(
 fn process_files(
     directory: uuid::Uuid,
     file_paths: Vec<PathBuf>,
-) -> Result<Vec<(Document, DocumentMeta)>, KnawledgeError> {
+) -> Result<Vec<(Document, DocumentMeta)>, LedgeknawError> {
     let files_total = file_paths.len();
     let mut files_remaining = files_total;
 
@@ -325,7 +325,7 @@ fn process_files(
         }
 
         type TaskWithStart<'a> = (
-            ScopedJoinHandle<'a, Result<Vec<(Document, DocumentMeta)>, KnawledgeError>>,
+            ScopedJoinHandle<'a, Result<Vec<(Document, DocumentMeta)>, LedgeknawError>>,
             Instant,
         );
 
@@ -396,16 +396,16 @@ fn process_files(
     Ok(files)
 }
 
-fn get_valid_name(path: &Path) -> Result<&str, KnawledgeError> {
+fn get_valid_name(path: &Path) -> Result<&str, LedgeknawError> {
     let dir_name = path
         .file_name()
-        .ok_or(KnawledgeError::InvalidDirectory(format!(
+        .ok_or(LedgeknawError::InvalidDirectory(format!(
             "{}: unsupported directory",
             path.display()
         )))?;
     Ok(dir_name
         .to_str()
-        .ok_or(KnawledgeError::InvalidDirectory(format!(
+        .ok_or(LedgeknawError::InvalidDirectory(format!(
             "{dir_name:?}: not valid utf-8"
         )))?)
 }

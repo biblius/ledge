@@ -16,7 +16,7 @@
   let children = [];
   let loaded = false;
 
-  const baseUrl = 'http://localhost:3030';
+  const baseUrl = import.meta.env.VITE_BASE_URL;
 
   let open = false;
 

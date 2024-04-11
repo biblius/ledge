@@ -2,7 +2,7 @@ use crate::{
     auth::Auth,
     document::models::DirectoryEntry,
     document::{DocumentData, DocumentMeta},
-    error::KnawledgeError,
+    error::LedgeknawError,
     state::Documents,
 };
 use axum::{http::Method, response::IntoResponse, routing::get, Json, Router};
@@ -52,11 +52,11 @@ fn public_router(state: Documents) -> Router {
 #[debug_handler]
 pub async fn index(
     state: axum::extract::State<Documents>,
-) -> Result<impl IntoResponse, KnawledgeError> {
+) -> Result<impl IntoResponse, LedgeknawError> {
     info!("Loading index");
     let doc_path = state.db.get_index_id_path().await?;
     let Some((id, path)) = doc_path else {
-        return Err(KnawledgeError::NotFound("index.md".to_string()));
+        return Err(LedgeknawError::NotFound("index.md".to_string()));
     };
     let index = DocumentData::read_from_disk(id, path)?;
     Ok(Json(index).into_response())
@@ -65,12 +65,12 @@ pub async fn index(
 pub async fn document(
     state: axum::extract::State<Documents>,
     path: axum::extract::Path<String>,
-) -> Result<Json<DocumentData>, KnawledgeError> {
+) -> Result<Json<DocumentData>, LedgeknawError> {
     let uuid = uuid::Uuid::from_str(&path);
 
     let Ok(uuid) = uuid else {
         let Some((id, path)) = state.db.get_doc_id_path_by_custom_id(&path).await? else {
-            return Err(KnawledgeError::NotFound(path.0));
+            return Err(LedgeknawError::NotFound(path.0));
         };
 
         info!("Reading {path}");
@@ -81,7 +81,7 @@ pub async fn document(
     let doc_path = state.db.get_doc_path(uuid).await?;
 
     let Some(path) = doc_path else {
-        return Err(KnawledgeError::NotFound(path.0.to_string()));
+        return Err(LedgeknawError::NotFound(path.0.to_string()));
     };
 
     info!("Reading {path}");
@@ -92,10 +92,10 @@ pub async fn document(
 pub async fn document_meta(
     state: axum::extract::State<Documents>,
     path: axum::extract::Path<uuid::Uuid>,
-) -> Result<Json<DocumentMeta>, KnawledgeError> {
+) -> Result<Json<DocumentMeta>, LedgeknawError> {
     let doc_path = state.db.get_doc_path(path.0).await?;
     let Some(path) = doc_path else {
-        return Err(KnawledgeError::NotFound(path.0.to_string()));
+        return Err(LedgeknawError::NotFound(path.0.to_string()));
     };
     let meta = DocumentMeta::read_from_file(path)?;
     Ok(Json(meta))
@@ -103,7 +103,7 @@ pub async fn document_meta(
 
 pub async fn sidebar_init(
     state: axum::extract::State<Documents>,
-) -> Result<Json<Vec<DirectoryEntry>>, KnawledgeError> {
+) -> Result<Json<Vec<DirectoryEntry>>, LedgeknawError> {
     let docs = state.db.list_roots().await?;
     Ok(Json(docs))
 }
@@ -111,7 +111,7 @@ pub async fn sidebar_init(
 pub async fn sidebar_entries(
     state: axum::extract::State<Documents>,
     path: axum::extract::Path<uuid::Uuid>,
-) -> Result<Json<Vec<DirectoryEntry>>, KnawledgeError> {
+) -> Result<Json<Vec<DirectoryEntry>>, LedgeknawError> {
     let files = state.db.list_entries(path.0).await?;
     Ok(Json(files))
 }

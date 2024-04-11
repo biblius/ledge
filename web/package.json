@@ -1,11 +1,11 @@
 {
-  "name": "knawledger",
+  "name": "ledgeknaw",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite build --outDir ../dist --minify esbuild -w --emptyOutDir",
-    "build": "vite build",
+    "build": "vite build --outDir ../dist --minify esbuild --emptyOutDir",
     "preview": "vite preview"
   },
   "devDependencies": {

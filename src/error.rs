@@ -7,7 +7,7 @@ use tracing::error;
 use crate::auth::AuthError;
 
 #[derive(Debug, Error)]
-pub enum KnawledgeError {
+pub enum LedgeknawError {
     #[error("IO: {0}")]
     IO(#[from] std::io::Error),
 
@@ -51,17 +51,17 @@ pub enum KnawledgeError {
     Auth(#[from] AuthError),
 }
 
-impl From<argon2::Error> for KnawledgeError {
+impl From<argon2::Error> for LedgeknawError {
     fn from(value: argon2::Error) -> Self {
         Self::A2Hash(value)
     }
 }
 
-impl IntoResponse for KnawledgeError {
+impl IntoResponse for LedgeknawError {
     fn into_response(self) -> axum::response::Response {
         error!("Error: {self}");
 
-        use KnawledgeError as KE;
+        use LedgeknawError as KE;
 
         match self {
             KE::NotFound(e) => (StatusCode::NOT_FOUND, e).into_response(),

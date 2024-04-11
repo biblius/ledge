@@ -1,5 +1,5 @@
 use super::models::Session;
-use crate::error::KnawledgeError;
+use crate::error::LedgeknawError;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
@@ -17,7 +17,7 @@ impl AuthDatabase {
         &self,
         session_id: uuid::Uuid,
         expires: DateTime<Utc>,
-    ) -> Result<Session, KnawledgeError> {
+    ) -> Result<Session, LedgeknawError> {
         Ok(sqlx::query_as!(
             Session,
             "INSERT INTO sessions VALUES ($1, $2) RETURNING id, expires, created_at, updated_at",
@@ -28,7 +28,7 @@ impl AuthDatabase {
         .await?)
     }
 
-    pub async fn session_check(&self, session_id: uuid::Uuid) -> Result<bool, KnawledgeError> {
+    pub async fn session_check(&self, session_id: uuid::Uuid) -> Result<bool, LedgeknawError> {
         let count = sqlx::query!(
             "SELECT COUNT(id) FROM sessions WHERE id = $1 AND expires > NOW()",
             session_id

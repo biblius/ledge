@@ -1,5 +1,5 @@
 {
-  "title": "My Knawledger",
+  "title": "My Ledgeknaw",
   "directories": { "My Foo Directory": "foo", "My content": "content" },
   "admin": {
     "cookie_domain": "localhost",

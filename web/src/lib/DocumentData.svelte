@@ -4,7 +4,7 @@
 </script>
 
 <svelte:head>
-    <title> {meta?.title || 'Knawledger'} </title>
+    <title> {meta?.title || 'Ledgeknaw'} </title>
 </svelte:head>
 
 <section id="markdown-content" class="markdown-body">

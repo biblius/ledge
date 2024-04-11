@@ -1,5 +1,5 @@
 use super::{models::Document, Directory, DocumentMeta};
-use crate::{document::models::DirectoryEntry, error::KnawledgeError};
+use crate::{document::models::DirectoryEntry, error::LedgeknawError};
 use sqlx::PgPool;
 use tracing::debug;
 
@@ -14,7 +14,7 @@ impl DocumentDb {
     }
 
     /// Retrieve all paths from the documents table
-    pub async fn get_all_file_paths(&self) -> Result<Vec<String>, KnawledgeError> {
+    pub async fn get_all_file_paths(&self) -> Result<Vec<String>, LedgeknawError> {
         Ok(sqlx::query!("SELECT path FROM documents",)
             .fetch_all(&self.pool)
             .await?
@@ -29,7 +29,7 @@ impl DocumentDb {
         path: &str,
         name: &str,
         parent: uuid::Uuid,
-    ) -> Result<Directory, KnawledgeError> {
+    ) -> Result<Directory, LedgeknawError> {
         sqlx::query_as!(
             Directory,
             "INSERT INTO directories(path, name, parent) VALUES($1, $2, $3) RETURNING *",
@@ -39,7 +39,7 @@ impl DocumentDb {
         )
         .fetch_one(&self.pool)
         .await
-        .map_err(KnawledgeError::from)
+        .map_err(LedgeknawError::from)
     }
 
     /// Insert a root directory entry to the DB
@@ -48,7 +48,7 @@ impl DocumentDb {
         path: &str,
         name: &str,
         alias: &str,
-    ) -> Result<Directory, KnawledgeError> {
+    ) -> Result<Directory, LedgeknawError> {
         sqlx::query_as!(
             Directory,
             "INSERT INTO directories(path, name, alias) VALUES($1, $2, $3) RETURNING *",
@@ -58,14 +58,14 @@ impl DocumentDb {
         )
         .fetch_one(&self.pool)
         .await
-        .map_err(KnawledgeError::from)
+        .map_err(LedgeknawError::from)
     }
 
     pub async fn insert_doc(
         &self,
         document: &Document,
         meta: &DocumentMeta,
-    ) -> Result<(), KnawledgeError> {
+    ) -> Result<(), LedgeknawError> {
         let Document {
             file_name,
             directory,
@@ -91,10 +91,10 @@ impl DocumentDb {
         .execute(&self.pool)
         .await
         .map(|_| ())
-        .map_err(KnawledgeError::from)
+        .map_err(LedgeknawError::from)
     }
 
-    pub async fn get_index_id_path(&self) -> Result<Option<(uuid::Uuid, String)>, KnawledgeError> {
+    pub async fn get_index_id_path(&self) -> Result<Option<(uuid::Uuid, String)>, LedgeknawError> {
         Ok(
             sqlx::query!("SELECT id, path FROM documents WHERE file_name = 'index.md' LIMIT 1")
                 .fetch_optional(&self.pool)
@@ -103,7 +103,7 @@ impl DocumentDb {
         )
     }
 
-    pub async fn get_doc_path(&self, id: uuid::Uuid) -> Result<Option<String>, KnawledgeError> {
+    pub async fn get_doc_path(&self, id: uuid::Uuid) -> Result<Option<String>, LedgeknawError> {
         Ok(sqlx::query!("SELECT path FROM documents WHERE id = $1", id)
             .fetch_optional(&self.pool)
             .await?
@@ -113,7 +113,7 @@ impl DocumentDb {
     pub async fn get_doc_id_path_by_custom_id(
         &self,
         custom_id: &str,
-    ) -> Result<Option<(uuid::Uuid, String)>, KnawledgeError> {
+    ) -> Result<Option<(uuid::Uuid, String)>, LedgeknawError> {
         Ok(sqlx::query!(
             "SELECT id, path FROM documents WHERE custom_id = $1",
             custom_id
@@ -123,7 +123,7 @@ impl DocumentDb {
         .map(|el| (el.id, el.path)))
     }
 
-    pub async fn list_root_paths(&self) -> Result<Vec<String>, KnawledgeError> {
+    pub async fn list_root_paths(&self) -> Result<Vec<String>, LedgeknawError> {
         Ok(
             sqlx::query!("SELECT path FROM directories WHERE parent IS NULL",)
                 .fetch_all(&self.pool)
@@ -134,14 +134,14 @@ impl DocumentDb {
         )
     }
 
-    pub async fn get_dir_by_path(&self, path: &str) -> Result<Option<Directory>, KnawledgeError> {
+    pub async fn get_dir_by_path(&self, path: &str) -> Result<Option<Directory>, LedgeknawError> {
         sqlx::query_as!(Directory, "SELECT * FROM directories WHERE path = $1", path)
             .fetch_optional(&self.pool)
             .await
-            .map_err(KnawledgeError::from)
+            .map_err(LedgeknawError::from)
     }
 
-    pub async fn get_root_by_path(&self, path: &str) -> Result<Option<Directory>, KnawledgeError> {
+    pub async fn get_root_by_path(&self, path: &str) -> Result<Option<Directory>, LedgeknawError> {
         sqlx::query_as!(
             Directory,
             "SELECT * FROM directories WHERE path = $1 AND parent IS NULL",
@@ -149,14 +149,14 @@ impl DocumentDb {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(KnawledgeError::from)
+        .map_err(LedgeknawError::from)
     }
 
     pub async fn list_document_in_dir(
         &self,
         directory: uuid::Uuid,
         file_names: &[String],
-    ) -> Result<Vec<Document>, KnawledgeError> {
+    ) -> Result<Vec<Document>, LedgeknawError> {
         sqlx::query_as!(
             Document,
             "SELECT file_name, directory, path 
@@ -166,10 +166,10 @@ impl DocumentDb {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(KnawledgeError::from)
+        .map_err(LedgeknawError::from)
     }
 
-    pub async fn list_roots(&self) -> Result<Vec<DirectoryEntry>, KnawledgeError> {
+    pub async fn list_roots(&self) -> Result<Vec<DirectoryEntry>, LedgeknawError> {
         sqlx::query_as_unchecked!(
             DirectoryEntry,
             r#"
@@ -179,13 +179,13 @@ impl DocumentDb {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(KnawledgeError::from)
+        .map_err(LedgeknawError::from)
     }
 
     pub async fn list_entries(
         &self,
         id: uuid::Uuid,
-    ) -> Result<Vec<DirectoryEntry>, KnawledgeError> {
+    ) -> Result<Vec<DirectoryEntry>, LedgeknawError> {
         sqlx::query_as_unchecked!(
             DirectoryEntry,
             r#"
@@ -201,14 +201,14 @@ impl DocumentDb {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(KnawledgeError::from)
+        .map_err(LedgeknawError::from)
     }
 
     pub async fn get_dir_by_name_and_parent(
         &self,
         name: &str,
         id: uuid::Uuid,
-    ) -> Result<Option<Directory>, KnawledgeError> {
+    ) -> Result<Option<Directory>, LedgeknawError> {
         sqlx::query_as!(
             Directory,
             "SELECT * FROM directories WHERE name=$1 AND parent=$2",
@@ -217,13 +217,13 @@ impl DocumentDb {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(KnawledgeError::from)
+        .map_err(LedgeknawError::from)
     }
 
     pub async fn get_root_dir_by_name(
         &self,
         name: &str,
-    ) -> Result<Option<Directory>, KnawledgeError> {
+    ) -> Result<Option<Directory>, LedgeknawError> {
         sqlx::query_as!(
             Directory,
             "SELECT * FROM directories WHERE name=$1 AND parent IS NULL",
@@ -231,14 +231,14 @@ impl DocumentDb {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(KnawledgeError::from)
+        .map_err(LedgeknawError::from)
     }
 
     pub async fn update_doc_by_path(
         &self,
         path: &str,
         meta: &DocumentMeta,
-    ) -> Result<(), KnawledgeError> {
+    ) -> Result<(), LedgeknawError> {
         let DocumentMeta {
             custom_id,
             title,
@@ -265,15 +265,15 @@ impl DocumentDb {
         Ok(())
     }
 
-    pub async fn remove_dir(&self, path: &str) -> Result<(), KnawledgeError> {
+    pub async fn remove_dir(&self, path: &str) -> Result<(), LedgeknawError> {
         sqlx::query_as!(Directory, "DELETE FROM directories WHERE path = $1", path)
             .fetch_optional(&self.pool)
             .await
             .map(|_| ())
-            .map_err(KnawledgeError::from)
+            .map_err(LedgeknawError::from)
     }
 
-    pub async fn remove_doc_by_path(&self, path: &str) -> Result<(), KnawledgeError> {
+    pub async fn remove_doc_by_path(&self, path: &str) -> Result<(), LedgeknawError> {
         sqlx::query!("DELETE FROM documents WHERE path = $1", path)
             .execute(&self.pool)
             .await?;
@@ -281,7 +281,7 @@ impl DocumentDb {
     }
 
     /// Delete any root directories from the DB not in `paths`.
-    pub async fn trim_roots(&self, paths: &[String]) -> Result<(), KnawledgeError> {
+    pub async fn trim_roots(&self, paths: &[String]) -> Result<(), LedgeknawError> {
         // https://github.com/launchbadge/sqlx/blob/main/FAQ.md#how-can-i-do-a-select--where-foo-in--query
         let count = sqlx::query!(
             "

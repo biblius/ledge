@@ -3,6 +3,7 @@
   import SidebarEntry from "./lib/SidebarEntry.svelte";
   import showdown from "showdown";
   import { onMount, setContext } from "svelte";
+  const baseUrl = import.meta.env.VITE_BASE_URL;
 
   // Handle forward/back buttons
   window.addEventListener("popstate", (event) => {
@@ -15,8 +16,6 @@
   });
 
   let id, content, meta;
-
-  const baseUrl = "http://127.0.0.1:3030";
 
   // Set the document ID to the one in the URL
   const pageUrl = window.location.href;
@@ -49,8 +48,8 @@
       }
 
       // In case of no index, return the default page
-      meta = { title: "Knawledger" };
-      content = "This is my Knawledge.";
+      meta = { title: "Ledgeknaw" };
+      content = "This is my knawledge.";
     }
 
     const data = await response.json();
@@ -121,7 +120,7 @@
 
 <nav>
   <h1>
-    <a href="/"> Knawledger </a>
+    <a href="/"> Ledgeknaw </a>
   </h1>
   {#await loadSidebar()}
     Loading...
