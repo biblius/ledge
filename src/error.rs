@@ -59,8 +59,6 @@ pub enum LedgeknawError {
 
     #[error("Query validation error: {0}")]
     QueryValidation(String),
-    #[error("JSON error: {0}")]
-    SerdeJson(#[from] serde_json::Error),
 
     #[error("Argon2 hash error: {0}")]
     A2Hash(argon2::Error),
@@ -111,7 +109,9 @@ impl IntoResponse for LedgeknawError {
             }
             // Occurs on pw verification in handlers
             KE::A2Validation(e) => (StatusCode::UNAUTHORIZED, e.to_string()).into_response(),
-            KE::Auth(e) => e.into_response()
+            KE::Auth(e) => e.into_response(),
+            KE::Chunker(_) => todo!(),
+            KE::QueryValidation(_) => todo!(),
         }
     }
 }

@@ -22,6 +22,7 @@ pub mod config;
 pub mod db;
 pub mod document;
 pub mod error;
+pub mod llm;
 pub mod notifiy;
 pub mod router;
 pub mod state;

@@ -1,6 +1,6 @@
 use std::fs;
 
-use crate::error::KnawledgeError;
+use crate::error::LedgeknawError;
 
 use self::chunk::Chunker;
 
@@ -12,7 +12,7 @@ pub fn prepare_chunks<T: Chunker>(
     chunker: &T,
     directory: &str,
     out: Option<&str>,
-) -> Result<(), KnawledgeError> {
+) -> Result<(), LedgeknawError> {
     // TODO: Handle bad out directory
 
     let entries = fs::read_dir(&directory)?

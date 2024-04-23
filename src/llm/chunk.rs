@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::str::Utf8Error;
+use std::{iter::Product, str::Utf8Error};
 use thiserror::Error;
 use tracing::{debug, trace};
 
@@ -271,15 +271,6 @@ impl<'delim> Chunker for Recursive<'delim> {
 
         let mut chunks = vec![];
 
-        fn combine_str<'a>(start_str: &'a str, end_str: &'a str) -> Result<&'a str, Utf8Error> {
-            let current_ptr =
-                std::ptr::slice_from_raw_parts(start_str.as_ptr(), start_str.len() + end_str.len());
-
-            // SAFETY: We know we're withing the bounds of the original string since
-            // every split perfectly aligns with the next and previous one
-            unsafe { std::str::from_utf8(&*current_ptr) }
-        }
-
         for i in 0..splits.len() {
             let current = splits[i];
 
@@ -373,6 +364,177 @@ pub struct SlidingWindowDelimited {
 
     /// The delimiter to use to split sentences. At time of writing the most common one is ".".
     pub delimiter: char,
+
+    pub skip: &'static [&'static str],
+}
+
+#[derive(Debug)]
+struct Cursor<'a> {
+    buf: &'a str,
+    offset: usize,
+    delim: char,
+}
+
+impl<'a> Cursor<'a> {
+    fn new(input: &'a str, delim: char) -> Self {
+        Self {
+            buf: input,
+            offset: 0,
+            delim,
+        }
+    }
+
+    fn get_slice(&self) -> &'a str {
+        if self.buf.len() == 0 {
+            self.buf
+        } else {
+            &self.buf[..=self.offset]
+        }
+    }
+
+    fn advance(&mut self) -> bool {
+        if self.buf.len() == 0 || self.offset == self.buf.len() - 1 {
+            return true;
+        }
+
+        self.offset += 1;
+
+        //let mut chars = self.buf.chars();
+
+        //let stop = chars.nth(self.offset).is_some_and(|ch| ch == self.delim);
+
+        //if stop {
+        //    while let Some(ch) = chars.next() {
+        //        if ch == self.delim {
+        //            self.offset += 1;
+        //        } else {
+        //            break;
+        //        }
+        //    }
+        //}
+
+        //let mut chars = self.buf.chars();
+
+        while !self.buf.is_char_boundary(self.offset) {
+            self.offset += 1;
+            if self.offset == self.buf.len() - 1 {
+                return true;
+            }
+        }
+
+        if self.offset == self.buf.len() - 1 {
+            return true;
+        }
+
+        let bytes = self.buf.as_bytes();
+        let mut byte = bytes[self.offset] as char;
+
+        // Record stop before we adjust cursor
+        let stop = byte == self.delim;
+
+        if stop {
+            byte = bytes[self.offset + 1] as char;
+            while byte == self.delim {
+                if !self.buf.is_char_boundary(self.offset) {
+                    break;
+                }
+                byte = bytes[self.offset] as char;
+                self.offset += 1;
+            }
+        }
+
+        stop
+    }
+
+    /// Returns `true` if the cursor is finished.
+    fn advance_exact(&mut self, amt: usize) -> bool {
+        if self.offset + amt >= self.buf.len() {
+            self.offset += self.offset + amt - self.buf.len();
+            return true;
+        }
+        self.offset += amt;
+        self.offset == self.buf.len() - 1
+    }
+
+    fn peek(&self, pat: &str) -> bool {
+        if self.offset.saturating_sub(pat.len()) == 0 {
+            return false;
+        }
+        &self.buf[self.offset - pat.len()..self.offset] == pat
+    }
+
+    fn finished(&self) -> bool {
+        self.offset == self.buf.len() - 1
+    }
+}
+
+#[derive(Debug)]
+struct CursorRev<'a> {
+    buf: &'a str,
+    offset: usize,
+    delim: char,
+}
+
+impl<'a> CursorRev<'a> {
+    fn new(input: &'a str, delim: char) -> Self {
+        Self {
+            buf: input,
+            offset: input.len().saturating_sub(1),
+            delim,
+        }
+    }
+
+    fn get_slice(&self) -> &'a str {
+        if self.offset == 0 {
+            self.buf
+        } else {
+            &self.buf[self.offset + 1..]
+        }
+    }
+
+    fn advance(&mut self) -> bool {
+        if self.offset == 0 {
+            return true;
+        }
+
+        self.offset -= 1;
+
+        let mut chars = self.buf.chars().rev();
+
+        let mut stop = chars
+            .nth(self.buf.len() - 1 - self.offset)
+            .is_some_and(|ch| ch == self.delim);
+
+        if stop {
+            while let Some(ch) = chars.next() {
+                if ch == self.delim {
+                    self.offset -= 1;
+                    stop = false;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        stop
+    }
+
+    /// Returns `true` if the cursor is finished.
+    fn advance_exact(&mut self, amt: usize) -> bool {
+        self.offset = self.offset.saturating_sub(amt);
+        self.offset == 0
+    }
+
+    fn peek(&self, pat: &str) -> bool {
+        if self.offset.saturating_sub(pat.len()) == 0 {
+            return false;
+        }
+        &self.buf[self.offset - pat.len()..self.offset] == pat
+    }
+
+    fn finished(&self) -> bool {
+        self.offset == 0
+    }
 }
 
 impl Chunker for SlidingWindowDelimited {
@@ -380,129 +542,86 @@ impl Chunker for SlidingWindowDelimited {
         let Self {
             size,
             overlap,
-            delimiter,
+            delimiter: delim,
+            skip,
         } = self;
 
         let mut chunks = vec![];
 
-        let mut total_offset = 0;
-        let mut current_len = 0;
-        let mut current_start = 0;
+        let mut cursor = Cursor::new(input, *delim);
+        let mut chunk = &input[..1];
+        let mut start = 1;
 
-        loop {
-            let Some(mut current_end) = input[total_offset..].find(*delimiter) else {
-                break;
-            };
-
-            // Advance until a delimiter end is found
-            let mut skipped = 0;
-            while input
-                .as_bytes()
-                .get(current_end + 1)
-                .is_some_and(|ch| *ch == *delimiter as u8)
-            {
-                current_end += 1;
-                skipped += 1;
-            }
-
-            current_end += total_offset + 1;
-
-            if current_end > input.len() {
+        'main: loop {
+            if start >= input.len() {
                 break;
             }
 
-            if skipped > 0 {
-                total_offset += skipped + 1;
+            // Advance until delim
+            if !cursor.advance() {
                 continue;
             }
 
-            let sentence = &input[total_offset..current_end];
-
-            // If the chunk fits, extend buffer and advance index
-            if sentence.len() + current_len < *size {
-                current_len += sentence.len();
-                total_offset += sentence.len();
-                continue;
-            }
-
-            // End of chunk
-
-            let mut prev_sentences = 0;
-            let mut previous = 0;
-            let mut prev_start = current_start;
-            while let Some(mut prev_idx) = input[..prev_start].rfind(*delimiter) {
-                // Skip sequences of trailing punctuation
-                let mut amt_skipped = 0;
-                while input[..prev_start]
-                    .as_bytes()
-                    .get(prev_idx - 1)
-                    .is_some_and(|ch| *ch == *delimiter as u8)
-                {
-                    amt_skipped += 1;
-                    prev_idx -= 1;
-                }
-
-                // Skip the first delim since it belongs to the previous sentence.
-                if prev_idx == current_start - amt_skipped - 1 {
-                    prev_start -= 1;
-                    continue;
-                }
-
-                if amt_skipped > 0 {
-                    prev_start -= amt_skipped + 1;
-                    continue;
-                }
-
-                prev_start = prev_idx - 1;
-                prev_sentences += 1;
-                previous = prev_idx - amt_skipped + 1;
-
-                if prev_sentences >= *overlap {
-                    break;
+            if !cursor.finished() {
+                for s in *skip {
+                    if cursor.peek(s) {
+                        cursor.advance_exact(s.len());
+                        continue 'main;
+                    }
                 }
             }
 
-            let mut next_sentences = 0;
-            let mut next = 0;
-            let mut nex = input[current_end..].split_inclusive(*delimiter).peekable();
+            let piece = &input[start..=cursor.offset];
+            chunk = combine_str(chunk, piece)?;
+            start += piece.len();
 
-            while let Some(el) = nex.next() {
-                if el.is_empty() {
-                    continue;
-                }
+            if chunk.len() >= *size {
+                let prev = &input[..cursor.offset + 1 - chunk.len()];
+                let next = &input[cursor.offset + 1..];
 
-                if let Some(n) = nex.peek() {
-                    if n.len() == 1 && n.contains(*delimiter) {
-                        continue;
+                let mut p_cursor = CursorRev::new(prev, *delim);
+                let mut n_cursor = Cursor::new(next, *delim);
+
+                for i in 0..*overlap {
+                    loop {
+                        if p_cursor.advance() {
+                            for s in *skip {
+                                if p_cursor.peek(s) {
+                                    p_cursor.advance_exact(s.len());
+                                    continue;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    loop {
+                        if n_cursor.advance() {
+                            for s in *skip {
+                                if n_cursor.peek(s) {
+                                    n_cursor.advance_exact(s.len());
+                                    continue;
+                                }
+                            }
+                            break;
+                        }
                     }
                 }
 
-                next_sentences += 1;
-                next += el.len();
+                let prev = p_cursor.get_slice();
+                let next = n_cursor.get_slice();
 
-                if next_sentences >= *overlap {
+                let chunk_full = combine_str(combine_str(prev, chunk)?, next)?;
+
+                chunks.push(Chunk::new(chunk_full));
+
+                if start + 1 >= input.len() {
                     break;
                 }
+                chunk = &input[start..start + 1];
+
+                continue;
             }
-
-            let chunk = &input[previous..current_end + next];
-
-            trace!("Chunked: {chunk:?}\n");
-
-            chunks.push(Chunk::new(chunk.trim()));
-
-            current_start = total_offset + next;
-            total_offset += current_end + next - total_offset;
-            current_len = 0;
-
-            trace!("Current: {total_offset}, Start: {current_start}, End: {current_end}");
         }
-
-        debug!(
-            "Chunked {} chunks, avg chunk size: {}",
-            chunks.len(),
-            chunks.iter().fold(0, |acc, el| acc + el.content.len()) / chunks.len()
-        );
 
         Ok(chunks)
     }
@@ -514,8 +633,16 @@ impl Default for SlidingWindowDelimited {
             size: DEFAULT_SIZE,
             overlap: 5,
             delimiter: '.',
+            skip: &[],
         }
     }
+}
+
+#[inline]
+fn combine_str<'a>(start_str: &'a str, end_str: &'a str) -> Result<&'a str, Utf8Error> {
+    let current_ptr =
+        std::ptr::slice_from_raw_parts(start_str.as_ptr(), start_str.len() + end_str.len());
+    unsafe { std::str::from_utf8(&*current_ptr) }
 }
 
 #[cfg(test)]
@@ -605,6 +732,7 @@ The first programs I tried writing were on the IBM 1401 that our school district
             size: 50,
             overlap: 2,
             delimiter: '.',
+            skip: &[],
         };
 
         let chunks = chunker.chunk(INPUT.trim()).unwrap();
@@ -638,6 +766,7 @@ Exactly 17.
             size: 10,
             overlap: 2,
             delimiter: '.',
+            skip: &[],
         };
 
         let chunks = chunker.chunk(input.trim()).unwrap();
@@ -652,8 +781,27 @@ Exactly 17.
 
         let chunker = SlidingWindowDelimited {
             size: 10,
-            overlap: 2,
+            overlap: 1,
             delimiter: '.',
+            skip: &[],
+        };
+
+        let chunks = chunker.chunk(input.trim()).unwrap();
+        for chunk in chunks {
+            dbg!(chunk);
+        }
+    }
+
+    #[test]
+    fn recursive_works_with_file() {
+        let input = std::fs::read_to_string("content/README.md").unwrap();
+
+        let chunker = Recursive {
+            delims: &[
+                "######", "#####", "####", "###", "##", "#", "```", "\n---\n", "\n___\n", "\n\n",
+                "\n", " ", "",
+            ],
+            ..Default::default()
         };
 
         let chunks = chunker.chunk(input.trim()).unwrap();
@@ -666,13 +814,7 @@ Exactly 17.
     fn swd_works_with_file() {
         let input = std::fs::read_to_string("content/README.md").unwrap();
 
-        let chunker = Recursive {
-            delims: &[
-                "######", "#####", "####", "###", "##", "#", "```", "\n---\n", "\n___\n", "\n\n",
-                "\n", " ", "",
-            ],
-            ..Default::default()
-        };
+        let chunker = SlidingWindowDelimited::default();
 
         let chunks = chunker.chunk(input.trim()).unwrap();
         for chunk in chunks {
