@@ -1,7 +1,7 @@
 <script>
   import DocumentData from "./lib/DocumentData.svelte";
   import SidebarEntry from "./lib/SidebarEntry.svelte";
-  import showdown from "showdown";
+  import converter from "./lib/showdown";
   import { onMount, setContext } from "svelte";
   const baseUrl = import.meta.env.VITE_BASE_URL;
 
@@ -77,11 +77,6 @@
    * @param {{id: string, meta: object, content: string}} documentData
    */
   function displayMain(documentData) {
-    const converter = new showdown.Converter({
-      ghCodeBlocks: true,
-      ghCompatibleHeaderId: true,
-    });
-
     id = documentData.id;
     meta = documentData.meta;
     content = converter.makeHtml(documentData.content);
@@ -134,7 +129,7 @@
           name={entry.name}
           title={entry.title}
           type={entry.type}
-          custom_id={entry.custom_id}
+          customId={entry.customId}
         />
       {/each}
     </ul>
