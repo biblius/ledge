@@ -6,7 +6,6 @@ use tracing::error;
 
 use crate::auth::AuthError;
 use crate::llm;
-use crate::auth::AuthError;
 
 #[derive(Debug, Error)]
 pub enum LedgeknawError {
@@ -40,26 +39,9 @@ pub enum LedgeknawError {
     #[error("YAML error: {0}")]
     SerdeYaml(#[from] serde_yaml::Error),
 
-    #[error("JSON error: {0}")]
-    SerdeJson(#[from] serde_json::Error),
-
-    #[error("Argon2 hash error: {0}")]
-    A2Hash(argon2::Error),
-
-    #[error("Argon2 validation error: {0}")]
-    A2Validation(argon2::password_hash::Error),
-
-    #[error("Http: {0}")]
-    Http(#[from] axum::http::Error),
-
-    #[error("Authentication: {0}")]
-    Auth(#[from] AuthError),
     #[error("Chunker error: {0}")]
     Chunker(#[from] llm::chunk::ChunkerError),
 
-    #[error("Query validation error: {0}")]
-    QueryValidation(String),
-
     #[error("Argon2 hash error: {0}")]
     A2Hash(argon2::Error),
 
@@ -71,12 +53,6 @@ pub enum LedgeknawError {
 
     #[error("Authentication: {0}")]
     Auth(#[from] AuthError),
-}
-
-impl From<argon2::Error> for LedgeknawError {
-    fn from(value: argon2::Error) -> Self {
-        Self::A2Hash(value)
-    }
 }
 
 impl From<argon2::Error> for LedgeknawError {
@@ -111,7 +87,6 @@ impl IntoResponse for LedgeknawError {
             KE::A2Validation(e) => (StatusCode::UNAUTHORIZED, e.to_string()).into_response(),
             KE::Auth(e) => e.into_response(),
             KE::Chunker(_) => todo!(),
-            KE::QueryValidation(_) => todo!(),
         }
     }
 }

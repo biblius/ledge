@@ -13,13 +13,11 @@ pub struct Document {
 
 impl Document {
     pub fn new(directory: uuid::Uuid, name: String, path: String) -> Self {
-        let document = Self {
+        Self {
             file_name: name,
             directory,
             path,
-        };
-
-        document
+        }
     }
 }
 

@@ -403,9 +403,9 @@ fn get_valid_name(path: &Path) -> Result<&str, LedgeknawError> {
             "{}: unsupported directory",
             path.display()
         )))?;
-    Ok(dir_name
+    dir_name
         .to_str()
         .ok_or(LedgeknawError::InvalidDirectory(format!(
             "{dir_name:?}: not valid utf-8"
-        )))?)
+        )))
 }

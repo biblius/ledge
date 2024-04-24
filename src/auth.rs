@@ -44,7 +44,7 @@ impl Auth {
     pub async fn create_session(&self) -> Result<Session, LedgeknawError> {
         let id = uuid::Uuid::new_v4();
         let expires = Utc::now().to_utc() + Duration::hours(1);
-        Ok(self.db.insert_session(id, expires).await?)
+        self.db.insert_session(id, expires).await
     }
 
     pub fn create_session_cookie(&self, session_id: uuid::Uuid) -> Cookie<'_> {

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{iter::Product, str::Utf8Error};
+use std::str::Utf8Error;
 use thiserror::Error;
 use tracing::{debug, trace};
 
@@ -186,8 +186,8 @@ impl<'delim> Recursive<'delim> {
     /// `chunks` - Where the final chunks are stored.
     ///
     /// The function initially splits `input` with `delims[idx]`. For each split larger than `size`,
-    /// another round of splitting is performed using the next delimiter in `delims`, i.e.
-    /// `delims[idx + 1]`. In each round, the buffer contents are populated until the next chunk
+    /// another round of splitting is performed using the next delimiter in `delims`.
+    /// In each round, the buffer contents are populated until the next chunk
     /// would cause it to be larger than `size`. When this happens, the current buffer is pushed
     /// into `chunks`.
     ///
@@ -385,65 +385,32 @@ impl<'a> Cursor<'a> {
     }
 
     fn get_slice(&self) -> &'a str {
-        if self.buf.len() == 0 {
+        if self.buf.is_empty() {
             self.buf
         } else {
-            &self.buf[..=self.offset]
+            &self.buf[..self.offset]
         }
     }
 
-    fn advance(&mut self) -> bool {
-        if self.buf.len() == 0 || self.offset == self.buf.len() - 1 {
-            return true;
+    /// Advance the offset until `delim` is found. The offset will be set
+    /// to the index following the delim.
+    fn advance(&mut self) {
+        if self.buf.is_empty() || self.offset == self.buf.len() - 1 {
+            return;
         }
 
-        self.offset += 1;
+        let mut chars = self.buf.chars().skip(self.offset);
 
-        //let mut chars = self.buf.chars();
-
-        //let stop = chars.nth(self.offset).is_some_and(|ch| ch == self.delim);
-
-        //if stop {
-        //    while let Some(ch) = chars.next() {
-        //        if ch == self.delim {
-        //            self.offset += 1;
-        //        } else {
-        //            break;
-        //        }
-        //    }
-        //}
-
-        //let mut chars = self.buf.chars();
-
-        while !self.buf.is_char_boundary(self.offset) {
+        for ch in chars.by_ref() {
             self.offset += 1;
-            if self.offset == self.buf.len() - 1 {
-                return true;
+            if ch == self.delim {
+                break;
             }
         }
 
-        if self.offset == self.buf.len() - 1 {
-            return true;
+        while chars.next().is_some_and(|ch| ch == self.delim) {
+            self.offset += 1;
         }
-
-        let bytes = self.buf.as_bytes();
-        let mut byte = bytes[self.offset] as char;
-
-        // Record stop before we adjust cursor
-        let stop = byte == self.delim;
-
-        if stop {
-            byte = bytes[self.offset + 1] as char;
-            while byte == self.delim {
-                if !self.buf.is_char_boundary(self.offset) {
-                    break;
-                }
-                byte = bytes[self.offset] as char;
-                self.offset += 1;
-            }
-        }
-
-        stop
     }
 
     /// Returns `true` if the cursor is finished.
@@ -492,31 +459,38 @@ impl<'a> CursorRev<'a> {
         }
     }
 
-    fn advance(&mut self) -> bool {
+    fn advance(&mut self) {
         if self.offset == 0 {
-            return true;
+            return;
         }
-
         self.offset -= 1;
 
-        let mut chars = self.buf.chars().rev();
+        let mut chars = self
+            .buf
+            .chars()
+            .rev()
+            .skip(self.buf.len() - 1 - self.offset);
 
-        let mut stop = chars
-            .nth(self.buf.len() - 1 - self.offset)
-            .is_some_and(|ch| ch == self.delim);
+        loop {
+            let Some(ch) = chars.next() else {
+                break;
+            };
 
-        if stop {
-            while let Some(ch) = chars.next() {
-                if ch == self.delim {
+            if ch == self.delim {
+                // Advance until end of delimiter sequence
+                while chars.next().is_some_and(|ch| ch == self.delim) {
                     self.offset -= 1;
-                    stop = false;
-                } else {
-                    break;
                 }
+
+                break;
+            }
+
+            self.offset -= 1;
+
+            if self.offset == 0 {
+                break;
             }
         }
-
-        stop
     }
 
     /// Returns `true` if the cursor is finished.
@@ -525,15 +499,11 @@ impl<'a> CursorRev<'a> {
         self.offset == 0
     }
 
-    fn peek(&self, pat: &str) -> bool {
+    fn peek_back(&self, pat: &str) -> bool {
         if self.offset.saturating_sub(pat.len()) == 0 {
             return false;
         }
         &self.buf[self.offset - pat.len()..self.offset] == pat
-    }
-
-    fn finished(&self) -> bool {
-        self.offset == 0
     }
 }
 
@@ -554,13 +524,14 @@ impl Chunker for SlidingWindowDelimited {
 
         'main: loop {
             if start >= input.len() {
+                if !chunk.is_empty() {
+                    chunks.push(Chunk::new(chunk))
+                }
                 break;
             }
 
             // Advance until delim
-            if !cursor.advance() {
-                continue;
-            }
+            cursor.advance();
 
             if !cursor.finished() {
                 for s in *skip {
@@ -571,38 +542,30 @@ impl Chunker for SlidingWindowDelimited {
                 }
             }
 
-            let piece = &input[start..=cursor.offset];
+            let piece = &input[start..cursor.offset];
             chunk = combine_str(chunk, piece)?;
             start += piece.len();
 
             if chunk.len() >= *size {
-                let prev = &input[..cursor.offset + 1 - chunk.len()];
-                let next = &input[cursor.offset + 1..];
+                let prev = &input[..cursor.offset - chunk.len()];
+                let next = &input[cursor.offset..];
 
                 let mut p_cursor = CursorRev::new(prev, *delim);
                 let mut n_cursor = Cursor::new(next, *delim);
 
-                for i in 0..*overlap {
-                    loop {
-                        if p_cursor.advance() {
-                            for s in *skip {
-                                if p_cursor.peek(s) {
-                                    p_cursor.advance_exact(s.len());
-                                    continue;
-                                }
-                            }
-                            break;
+                for _ in 0..*overlap {
+                    p_cursor.advance();
+                    for s in *skip {
+                        if p_cursor.peek_back(s) {
+                            p_cursor.advance_exact(s.len());
+                            continue;
                         }
                     }
-                    loop {
-                        if n_cursor.advance() {
-                            for s in *skip {
-                                if n_cursor.peek(s) {
-                                    n_cursor.advance_exact(s.len());
-                                    continue;
-                                }
-                            }
-                            break;
+                    n_cursor.advance();
+                    for s in *skip {
+                        if n_cursor.peek(s) {
+                            n_cursor.advance_exact(s.len());
+                            continue;
                         }
                     }
                 }
@@ -618,8 +581,6 @@ impl Chunker for SlidingWindowDelimited {
                     break;
                 }
                 chunk = &input[start..start + 1];
-
-                continue;
             }
         }
 

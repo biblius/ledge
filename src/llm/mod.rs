@@ -15,7 +15,7 @@ pub fn prepare_chunks<T: Chunker>(
 ) -> Result<(), LedgeknawError> {
     // TODO: Handle bad out directory
 
-    let entries = fs::read_dir(&directory)?
+    let entries = fs::read_dir(directory)?
         .filter_map(Result::ok)
         .collect::<Vec<_>>();
 
