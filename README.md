@@ -4,6 +4,8 @@ A ledger for your knawledge.
 
 Built with love in rust and svelte.
 
+Live example available [here](https://knawledge.josipbenkodjakovic.from.hr).
+
 ## Development
 
 Requirements:

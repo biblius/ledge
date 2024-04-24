@@ -21,6 +21,11 @@
   const pageUrl = window.location.href;
   const documentId = pageUrl.substring(baseUrl.length + 1);
 
+
+  onMount(async () => {
+    loadDocumentData(documentId, null);
+  });
+
   /**
    * Fetch a document from the backend and display it on the page.
    * @param {?string} docId The UUID of the document
@@ -37,7 +42,7 @@
 
     // Fetch the new document, display popup if not found
     const base = `${baseUrl}/document`;
-    const url = docId ? `${base}/${docId}` : base;
+    const url = docId ? `${base}/${customId || docId}` : base;
 
     const response = await fetch(url);
 
@@ -84,7 +89,8 @@
 
   async function loadSidebar() {
     const res = await fetch(`${baseUrl}/side`);
-    return (await res.json()).filter((el) => el.name !== "index.md");
+    const data = await res.json();
+    return data;
   }
 
   function getCurrentMainId() {
@@ -111,10 +117,6 @@
     loadDocumentData,
     getCurrentMainId,
     selectListItem,
-  });
-
-  onMount(async () => {
-    loadDocumentData(documentId, null);
   });
 </script>
 
