@@ -46,13 +46,13 @@ impl Documents {
         // Trim any root dirs that should not be loaded
         self.db.trim_roots(&full_paths).await?;
 
-        // Trim any files no longer on fs
+        // Trim any files and directories no longer on fs
         let file_paths = self.db.get_all_file_paths().await?;
         for path in file_paths {
             if let Err(e) = tokio::fs::metadata(&path).await {
                 warn!("Error while reading file {path}, trimming");
                 trace!("Error: {e}");
-                self.db.remove_doc_by_path(&path).await?;
+                self.db.remove_file_by_path(&path).await?;
             }
         }
 

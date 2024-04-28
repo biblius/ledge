@@ -54,8 +54,8 @@ async fn main() {
     let document_db = DocumentDb::new(db_pool.clone()).await;
     let auth_db = AuthDatabase::new(db_pool.clone()).await;
 
-    let state = Documents::new(document_db.clone(), title, directories);
-    state.sync().await.expect("error in state sync");
+    let documents = Documents::new(document_db.clone(), title, directories);
+    documents.sync().await.expect("error in state sync");
 
     // let (tx, rx) = std::sync::mpsc::channel();
 
@@ -78,7 +78,7 @@ async fn main() {
         .await
         .expect("error while starting TCP listener");
 
-    let router = router::router(state, admin.map(|config| Auth::new(auth_db, config)));
+    let router = router::router(documents, admin.map(|config| Auth::new(auth_db, config)));
 
     axum::serve(listener, router)
         .await

@@ -15,12 +15,14 @@ impl DocumentDb {
 
     /// Retrieve all paths from the documents table
     pub async fn get_all_file_paths(&self) -> Result<Vec<String>, LedgeknawError> {
-        Ok(sqlx::query!("SELECT path FROM documents",)
-            .fetch_all(&self.pool)
-            .await?
-            .into_iter()
-            .map(|el| el.path)
-            .collect())
+        Ok(
+            sqlx::query!("SELECT path FROM documents UNION SELECT path FROM directories",)
+                .fetch_all(&self.pool)
+                .await?
+                .into_iter()
+                .filter_map(|el| el.path)
+                .collect(),
+        )
     }
 
     /// Insert a child directory entry to the DB
@@ -273,8 +275,12 @@ impl DocumentDb {
             .map_err(LedgeknawError::from)
     }
 
-    pub async fn remove_doc_by_path(&self, path: &str) -> Result<(), LedgeknawError> {
+    pub async fn remove_file_by_path(&self, path: &str) -> Result<(), LedgeknawError> {
         sqlx::query!("DELETE FROM documents WHERE path = $1", path)
+            .execute(&self.pool)
+            .await?;
+
+        sqlx::query!("DELETE FROM directories WHERE path = $1", path)
             .execute(&self.pool)
             .await?;
         Ok(())
