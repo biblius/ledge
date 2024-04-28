@@ -269,22 +269,4 @@ mod tests {
         let chunks = chunker.chunk(input).unwrap();
         assert!(chunks.is_empty());
     }
-
-    #[test]
-    fn recursive_works_with_file() {
-        let input = std::fs::read_to_string("content/README.md").unwrap();
-
-        let chunker = Recursive {
-            delims: &[
-                "######", "#####", "####", "###", "##", "#", "```", "\n---\n", "\n___\n", "\n\n",
-                "\n", " ", "",
-            ],
-            ..Default::default()
-        };
-
-        let chunks = chunker.chunk(input.trim()).unwrap();
-        for chunk in chunks {
-            dbg!(chunk);
-        }
-    }
 }

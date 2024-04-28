@@ -1,21 +1,65 @@
 use super::{concat, Chunk, Chunker, ChunkerError, DEFAULT_SIZE};
 
+/// Heuristic chunker for texts intended for humans, e.g. documentation, books, blogs, etc.
+///
+/// Basically a sliding window which is aware of sentence stops, currently the only stop
+/// implemented is the '.' character.
+///
+/// It will attempt to chunk the content according to `size`. Keep in mind it cannot
+/// be exact and the chunks will probably be larger, because of the way it searches
+/// for delimiters.
+///
+/// The chunker can also be configured to skip common patterns including the fullstop
+/// such as abbreviations (e.g., i.e., etc.) and urls.
 #[derive(Debug)]
 pub struct SnappingSlidingWindow<'skip> {
     /// Base chunk size. Cannot be exact in this case since the chunks are based on sentences
     /// which are of arbitrary length.
-    pub size: usize,
+    size: usize,
 
     /// The amount of sentences that will be present in the current chunk from the chunk prior and
     /// chunk after.
-    pub overlap: usize,
+    overlap: usize,
 
     /// The delimiter to use to split sentences. At time of writing the most common one is ".".
-    pub delimiter: char,
+    delimiter: char,
 
-    pub skip_forward: Vec<&'skip str>,
+    /// Whenever a delimiter is found, the chunker will look ahead for these sequences
+    /// and will skip the delimiter if found, basically treating it as a regular char.
+    ///
+    /// Useful for common abbreviations and urls.
+    skip_forward: &'skip [&'skip str],
 
-    pub skip_back: Vec<&'skip str>,
+    /// Whenever a delimiter is found, the chunker will look back for these sequences
+    /// and will skip the delimiter if found, basically treating it as a regular char.
+    ///
+    /// Useful for common abbreviations and urls.
+    skip_back: &'skip [&'skip str],
+}
+
+impl<'skip> SnappingSlidingWindow<'skip> {
+    pub fn new(size: usize, overlap: usize) -> Self {
+        Self {
+            size,
+            overlap,
+            ..Default::default()
+        }
+    }
+
+    pub fn delimiter(mut self, delimiter: char) -> Self {
+        self.delimiter = delimiter;
+        self
+    }
+
+    pub fn skip_forward(mut self, skip_forward: &'skip [&'skip str]) -> Self {
+        self.skip_forward = skip_forward;
+        self
+    }
+
+    pub fn skip_back(mut self, skip_back: &'skip [&'skip str]) -> Self {
+        self.skip_back = skip_back;
+        self
+    }
 }
 
 impl<'skip> Chunker for SnappingSlidingWindow<'skip> {
@@ -50,47 +94,50 @@ impl<'skip> Chunker for SnappingSlidingWindow<'skip> {
             }
 
             let piece = &input[start..cursor.pos];
+
             chunk = concat(chunk, piece)?;
             start += piece.len();
 
-            if chunk.len() >= *size {
-                let prev = &input[..cursor.pos - chunk.len()];
-                let next = &input[cursor.pos..];
-
-                let mut p_cursor = CursorRev::new(prev, *delim);
-                let mut n_cursor = Cursor::new(next, *delim);
-
-                for _ in 0..*overlap {
-                    loop {
-                        p_cursor.advance();
-                        if !p_cursor.advance_if_peek(skip_forward, skip_back) {
-                            break;
-                        }
-                    }
-
-                    loop {
-                        n_cursor.advance();
-                        if !n_cursor.advance_if_peek(skip_forward, skip_back) {
-                            break;
-                        }
-                    }
-                }
-
-                let prev = p_cursor.get_slice();
-                let next = n_cursor.get_slice();
-
-                let chunk_full = concat(concat(prev, chunk)?, next)?;
-
-                chunks.push(Chunk::new(chunk_full));
-
-                start += 1;
-
-                if start + n_cursor.pos >= input.len() {
-                    break;
-                }
-
-                chunk = &input[start - 1..start];
+            if chunk.len() < *size {
+                continue;
             }
+
+            let prev = &input[..cursor.pos - chunk.len()];
+            let next = &input[cursor.pos..];
+
+            let mut p_cursor = CursorRev::new(prev, *delim);
+            let mut n_cursor = Cursor::new(next, *delim);
+
+            for _ in 0..*overlap {
+                loop {
+                    p_cursor.advance();
+                    if !p_cursor.advance_if_peek(skip_forward, skip_back) {
+                        break;
+                    }
+                }
+
+                loop {
+                    n_cursor.advance();
+                    if !n_cursor.advance_if_peek(skip_forward, skip_back) {
+                        break;
+                    }
+                }
+            }
+
+            let prev = p_cursor.get_slice();
+            let next = n_cursor.get_slice();
+
+            let chunk_full = concat(concat(prev, chunk)?, next)?;
+
+            chunks.push(Chunk::new(chunk_full));
+
+            start += 1;
+
+            if start + n_cursor.pos >= input.len() {
+                break;
+            }
+
+            chunk = &input[start - 1..start];
         }
 
         Ok(chunks)
@@ -104,10 +151,8 @@ impl Default for SnappingSlidingWindow<'_> {
             overlap: 5,
             delimiter: '.',
             // Common urls, abbreviations, file extensions
-            skip_forward: vec![
-                "com", "org", "net", "g.", "e.", "sh", "rs", "js", "json", "vhost",
-            ],
-            skip_back: vec!["www", "etc"],
+            skip_forward: &["com", "org", "net", "g.", "e.", "sh", "rs", "js", "json"],
+            skip_back: &["www", "etc", "e.g", "i.e"],
         }
     }
 }
@@ -144,15 +189,32 @@ impl<'a> Cursor<'a> {
 
         let mut chars = self.buf.chars().skip(self.pos);
 
-        for ch in chars.by_ref() {
+        loop {
+            let Some(ch) = chars.next() else {
+                debug_assert!(self.pos == self.buf.len() - 1);
+                break;
+            };
+
             self.pos += 1;
-            if ch == self.delim {
+
+            if self.pos == self.buf.len() - 1 {
                 break;
             }
-        }
 
-        while chars.next().is_some_and(|ch| ch == self.delim) {
-            self.pos += 1;
+            if ch == self.delim {
+                let mut stop = true;
+
+                while chars.next().is_some_and(|ch| ch == self.delim) {
+                    self.pos += 1;
+                    stop = false;
+                }
+
+                if stop {
+                    break;
+                }
+
+                self.pos += 1;
+            }
         }
     }
 
@@ -168,7 +230,16 @@ impl<'a> Cursor<'a> {
         if self.pos.saturating_sub(pat.len()) == 0 {
             return false;
         }
-        // pos is always advanced past delimiter
+
+        // pos is always advanced past delimiter unless it is at the end of buf
+        if self.pos == self.buf.len() - 1 {
+            // TODO
+            if &self.buf[self.pos..] == "." {
+                return &self.buf[self.pos - pat.len()..self.pos] == pat;
+            }
+            return &self.buf[self.pos - pat.len()..=self.pos] == pat;
+        }
+
         &self.buf[self.pos - 1 - pat.len()..self.pos - 1] == pat
     }
 
@@ -182,7 +253,6 @@ impl<'a> Cursor<'a> {
     fn advance_if_peek(&mut self, forward: &[&str], back: &[&str]) -> bool {
         for s in back {
             if self.peek_back(s) {
-                self.advance_exact(s.len());
                 return true;
             }
         }
@@ -260,7 +330,7 @@ impl<'a> CursorRev<'a> {
 
                 // We've invoked next on the chars and have to adjust
                 // We don't have to increment pos when we're stopping
-                // since we're breaking anyway
+                // since there's no delim and we're breaking anyway
                 if !stop {
                     self.pos -= 1;
                 }
@@ -306,7 +376,6 @@ impl<'a> CursorRev<'a> {
 
         for s in forward {
             if self.peek_forward(s) {
-                self.advance_exact(s.len());
                 return true;
             }
         }
@@ -323,17 +392,41 @@ mod tests {
     fn char_size() {
         let ch = 'Ü';
         let mut bytes = [0, 0];
-        dbg!(ch.encode_utf8(&mut bytes).len());
+        assert_eq!(2, ch.encode_utf8(&mut bytes).len());
+    }
+
+    #[test]
+    fn constructor() {
+        // For lifetime sanity checks
+        let skip_f = vec![String::from("foo"), String::from("bar")];
+        let skip_f: Vec<_> = skip_f.iter().map(|s| s.as_str()).collect();
+
+        let skip_b = vec![String::from("foo"), String::from("bar")];
+        let skip_b: Vec<_> = skip_b.iter().map(|s| s.as_str()).collect();
+        let size = 1;
+        let overlap = 1;
+        let delimiter = '!';
+
+        let chunker = SnappingSlidingWindow::new(size, overlap)
+            .delimiter(delimiter)
+            .skip_forward(&skip_f)
+            .skip_back(&skip_b);
+
+        assert_eq!(delimiter, chunker.delimiter);
+        assert_eq!(size, chunker.size);
+        assert_eq!(overlap, chunker.overlap);
+        assert_eq!(&skip_f, chunker.skip_forward);
+        assert_eq!(&skip_b, chunker.skip_back);
     }
 
     #[test]
     fn cursor_advances_to_delimiter() {
-        let cursor_input = "This is such a sentence. One of the sentences in the world. Super wow.";
-        let mut cursor = Cursor::new(cursor_input, '.');
+        let input = "This is such a sentence. One of the sentences in the world. Super wow.";
+        let mut cursor = Cursor::new(input, '.');
         let expected = [
             "This is such a sentence.",
             "This is such a sentence. One of the sentences in the world.",
-            cursor_input,
+            input,
         ];
         assert!(cursor.get_slice().is_empty());
         for test in expected {
@@ -344,13 +437,11 @@ mod tests {
 
     #[test]
     fn cursor_advances_past_repeating_delimiters() {
-        let cursor_input =
-            "This is such a sentence... One of the sentences in the world. Super wow.";
-        let mut cursor = Cursor::new(cursor_input, '.');
+        let input = "This is such a sentence... One of the sentences in the world. Super wow.";
+        let mut cursor = Cursor::new(input, '.');
         let expected = [
-            "This is such a sentence...",
             "This is such a sentence... One of the sentences in the world.",
-            cursor_input,
+            input,
         ];
         for test in expected {
             cursor.advance();
@@ -360,9 +451,9 @@ mod tests {
 
     #[test]
     fn cursor_advances_exact() {
-        let cursor_input = "This is Sparta my friend";
-        let mut cursor = Cursor::new(cursor_input, '.');
-        let expected = cursor_input.split_inclusive(' ');
+        let input = "This is Sparta my friend";
+        let mut cursor = Cursor::new(input, '.');
+        let expected = input.split_inclusive(' ');
         let mut buf = String::new();
         for test in expected {
             assert_eq!(&buf, cursor.get_slice());
@@ -373,8 +464,8 @@ mod tests {
 
     #[test]
     fn cursor_peek_forward() {
-        let cursor_input = "This. Is. Sentence. etc.";
-        let mut cursor = Cursor::new(cursor_input, '.');
+        let input = "This. Is. Sentence. etc.";
+        let mut cursor = Cursor::new(input, '.');
         let expected = ["This", " Is", " Sentence", " etc"];
         for test in expected {
             assert!(cursor.peek_forward(test));
@@ -385,12 +476,13 @@ mod tests {
 
     #[test]
     fn cursor_peek_back() {
-        let cursor_input = "This. Is. Sentence. etc.";
-        let mut cursor = Cursor::new(cursor_input, '.');
+        let input = "This. Is. Sentence. etc.";
+        let mut cursor = Cursor::new(input, '.');
         let expected = ["This", " Is", " Sentence", " etc"];
         assert!(!cursor.peek_back("This"));
         for test in expected {
             cursor.advance();
+            dbg!(test);
             assert!(cursor.peek_back(test));
         }
         assert!(cursor.peek_back("etc"));
@@ -398,12 +490,12 @@ mod tests {
 
     #[test]
     fn rev_cursor_advances_to_delimiter() {
-        let cursor_input = "This is such a sentence. One of the sentences in the world. Super wow.";
-        let mut cursor = CursorRev::new(cursor_input, '.');
+        let input = "This is such a sentence. One of the sentences in the world. Super wow.";
+        let mut cursor = CursorRev::new(input, '.');
         let expected = [
             " Super wow.",
             " One of the sentences in the world. Super wow.",
-            cursor_input,
+            input,
         ];
         for test in expected {
             cursor.advance();
@@ -413,13 +505,13 @@ mod tests {
 
     #[test]
     fn rev_cursor_advances_past_repeating_delimiters() {
-        let cursor_input =
+        let input =
             "This is such a sentence..... Very sentencey. So many.......... words. One of the sentences in the world... Super wow.";
-        let mut cursor = CursorRev::new(cursor_input, '.');
+        let mut cursor = CursorRev::new(input, '.');
         let expected = [
             " One of the sentences in the world... Super wow.",
             " So many.......... words. One of the sentences in the world... Super wow.",
-            cursor_input,
+            input,
         ];
         for test in expected {
             cursor.advance();
@@ -429,10 +521,10 @@ mod tests {
 
     #[test]
     fn rev_cursor_advances_exact() {
-        let cursor_input = "This is Sparta my friend";
-        let mut cursor = CursorRev::new(cursor_input, '.');
+        let input = "This is Sparta my friend";
+        let mut cursor = CursorRev::new(input, '.');
         let mut buf = String::new();
-        let expected = cursor_input.split_inclusive(' ');
+        let expected = input.split_inclusive(' ');
         for test in expected.into_iter().rev() {
             assert_eq!(&buf, cursor.get_slice());
             cursor.advance_exact(test.len());
@@ -442,8 +534,8 @@ mod tests {
 
     #[test]
     fn rev_cursor_peek_forward() {
-        let cursor_input = "This. Is. Sentence. etc.";
-        let mut cursor = CursorRev::new(cursor_input, '.');
+        let input = "This. Is. Sentence. etc.";
+        let mut cursor = CursorRev::new(input, '.');
         let expected = ["This", " Is", " Sentence", " etc"];
         for test in expected.into_iter().rev() {
             cursor.advance();
@@ -454,8 +546,8 @@ mod tests {
 
     #[test]
     fn rev_cursor_peek_back() {
-        let cursor_input = "This. Is. Sentence. etc.";
-        let mut cursor = CursorRev::new(cursor_input, '.');
+        let input = "This. Is. Sentence. etc.";
+        let mut cursor = CursorRev::new(input, '.');
         let expected = ["This", " Is", " Sentence", " etc"];
         assert!(cursor.peek_back("etc"));
         for test in expected.into_iter().rev() {
@@ -495,7 +587,7 @@ mod tests {
         let chunker = SnappingSlidingWindow {
             size: 1,
             overlap: 1,
-            skip_back: vec!["etc", "foobar"],
+            skip_back: &["etc", "foobar"],
             ..Default::default()
         };
         let expected = [
@@ -518,7 +610,7 @@ mod tests {
         let chunker = SnappingSlidingWindow {
             size: 1,
             overlap: 1,
-            skip_forward: vec!["com", "org"],
+            skip_forward: &["com", "org"],
             ..Default::default()
         };
         let expected = [
@@ -535,14 +627,27 @@ mod tests {
     }
 
     #[test]
-    fn ssw_works_with_file() {
-        let input = std::fs::read_to_string("content/README.md").unwrap();
+    fn ssw_skips_common_abbreviations() {
+        let input =
+            "Words are hard. There are many words in existence, e.g. this, that, etc..., quite a few, as you can see. My opinion, available at nobodycares.com, is that words should convey meaning. Not everyone agrees however, which is why they leverage agile frameworks to provide synopsises for high level overview, i.e. they speak nonsense.";
 
-        let chunker = SnappingSlidingWindow::default();
+        let chunker = SnappingSlidingWindow {
+            size: 1,
+            overlap: 1,
+            ..Default::default()
+        };
+
+        let expected = [
+            "Words are hard. There are many words in existence, e.g. this, that, etc..., quite a few, as you can see.",
+            "Words are hard. There are many words in existence, e.g. this, that, etc..., quite a few, as you can see. My opinion, available at nobodycares.com, is that words should convey meaning.",
+            input
+        ];
 
         let chunks = chunker.chunk(input.trim()).unwrap();
-        for chunk in chunks {
-            dbg!(chunk);
+        // assert_eq!(3, chunks.len());
+
+        for (chunk, test) in chunks.into_iter().zip(expected.into_iter()) {
+            assert_eq!(test, chunk.content);
         }
     }
 }
