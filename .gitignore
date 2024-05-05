@@ -3,5 +3,4 @@
 .env.production
 config.json
 dist
-web/dist
-web/node_modules
+web/**/node_modules

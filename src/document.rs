@@ -36,7 +36,7 @@ impl DocumentData {
             ..Default::default()
         };
         let content = fs::read_to_string(path)?;
-        let (meta, content) = DocumentMeta::read_from_str(&content)?;
+        let (meta, content) = DocumentMeta::from_str(&content)?;
         data.content = content.to_string();
         data.meta = meta;
         Ok(data)
@@ -67,12 +67,12 @@ impl DocumentMeta {
     pub fn read_from_file(path: impl AsRef<Path>) -> Result<Self, LedgeknawError> {
         debug!("Reading {}", path.as_ref().display());
         let content = fs::read_to_string(path)?;
-        Ok(Self::read_from_str(&content)?.0)
+        Ok(Self::from_str(&content)?.0)
     }
 
     /// Used when we already read the file from the fs.
     /// Returns the read meta and the remainder of the content.
-    pub fn read_from_str(content: &str) -> Result<(Self, &str), LedgeknawError> {
+    pub fn from_str(content: &str) -> Result<(Self, &str), LedgeknawError> {
         let mut data = Self {
             title: Self::find_title_from_h1(content),
             ..Default::default()

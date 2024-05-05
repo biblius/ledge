@@ -3,7 +3,8 @@
   import Icon from "./icon/Icon.svelte";
   import MdIcon from "./icon/MarkdownIcon.svelte";
   import DirIcon from "./icon/DirectoryIcon.svelte";
-  const baseUrl = import.meta.env.VITE_BASE_URL;
+
+  const { baseUrl } = getContext("baseUrl");
 
   const { loadDocumentData, getCurrentMainId, selectListItem } =
     getContext("documentMain");

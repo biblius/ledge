@@ -1,10 +1,14 @@
-use crate::{document::db::DocumentDb, document::process_root_directory, error::LedgeknawError};
+use crate::{
+    document::{db::DocumentDb, process_root_directory, DocumentData, DocumentMeta},
+    error::LedgeknawError,
+};
+use std::str::FromStr;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{trace, warn};
 
 #[derive(Debug, Clone)]
-pub struct Documents {
+pub struct DocumentService {
     pub db: DocumentDb,
 
     /// The document title for the front end
@@ -15,7 +19,7 @@ pub struct Documents {
     pub directories: Arc<RwLock<HashMap<String, String>>>,
 }
 
-impl Documents {
+impl DocumentService {
     pub fn new(
         db: DocumentDb,
         title: Option<String>,
@@ -61,5 +65,37 @@ impl Documents {
         }
 
         Ok(())
+    }
+
+    /// The `id` can either be the main identifier or a custom defined user id.
+    pub async fn read_file(&self, id: String) -> Result<DocumentData, LedgeknawError> {
+        let uuid = uuid::Uuid::from_str(&id);
+
+        let Ok(uuid) = uuid else {
+            let Some((id, path)) = self.db.get_doc_id_path_by_custom_id(&id).await? else {
+                return Err(LedgeknawError::NotFound(id));
+            };
+
+            let document = DocumentData::read_from_disk(id, path)?;
+            return Ok(document);
+        };
+
+        let doc_path = self.db.get_doc_path(uuid).await?;
+
+        let Some(path) = doc_path else {
+            return Err(LedgeknawError::NotFound(id));
+        };
+
+        let document = DocumentData::read_from_disk(uuid, path)?;
+        Ok(document)
+    }
+
+    pub async fn get_file_meta(&self, id: uuid::Uuid) -> Result<DocumentMeta, LedgeknawError> {
+        let doc_path = self.db.get_doc_path(id).await?;
+        let Some(path) = doc_path else {
+            return Err(LedgeknawError::NotFound(id.to_string()));
+        };
+        let meta = DocumentMeta::read_from_file(path)?;
+        Ok(meta)
     }
 }

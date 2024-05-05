@@ -4,9 +4,6 @@ use axum::{http::StatusCode, response::IntoResponse};
 use thiserror::Error;
 use tracing::error;
 
-use crate::auth::AuthError;
-use crate::llm;
-
 #[derive(Debug, Error)]
 pub enum LedgeknawError {
     #[error("IO: {0}")]
@@ -39,26 +36,8 @@ pub enum LedgeknawError {
     #[error("YAML error: {0}")]
     SerdeYaml(#[from] serde_yaml::Error),
 
-    #[error("Chunker error: {0}")]
-    Chunker(#[from] llm::chunk::ChunkerError),
-
-    #[error("Argon2 hash error: {0}")]
-    A2Hash(argon2::Error),
-
-    #[error("Argon2 validation error: {0}")]
-    A2Validation(argon2::password_hash::Error),
-
     #[error("Http: {0}")]
     Http(#[from] axum::http::Error),
-
-    #[error("Authentication: {0}")]
-    Auth(#[from] AuthError),
-}
-
-impl From<argon2::Error> for LedgeknawError {
-    fn from(value: argon2::Error) -> Self {
-        Self::A2Hash(value)
-    }
 }
 
 impl IntoResponse for LedgeknawError {
@@ -74,7 +53,6 @@ impl IntoResponse for LedgeknawError {
             | KE::Utf8(_)
             | KE::Watcher(_)
             // This one can only occur on startup if an invalid hash is given
-            | KE::A2Hash(_)
             | KE::Sqlx(_)
             | KE::SerdeYaml(_) | KE::Http(_)=> {
                 (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
@@ -84,9 +62,6 @@ impl IntoResponse for LedgeknawError {
                 (StatusCode::UNPROCESSABLE_ENTITY, self.to_string()).into_response()
             }
             // Occurs on pw verification in handlers
-            KE::A2Validation(e) => (StatusCode::UNAUTHORIZED, e.to_string()).into_response(),
-            KE::Auth(e) => e.into_response(),
-            KE::Chunker(_) => todo!(),
         }
     }
 }

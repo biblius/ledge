@@ -26,8 +26,6 @@ pub struct Config {
     /// The list of directories to initially include for the public page.
     /// Maps names to directory paths.
     pub directories: HashMap<String, String>,
-
-    pub admin: Option<AdminConfig>,
 }
 
 impl Config {
@@ -35,11 +33,4 @@ impl Config {
         let config = fs::read_to_string(path)?;
         Ok(serde_json::from_str(&config)?)
     }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct AdminConfig {
-    pub cookie_domain: String,
-    #[serde(alias = "password_hash")]
-    pub pw_hash: String,
 }

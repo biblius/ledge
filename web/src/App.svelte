@@ -3,7 +3,8 @@
   import SidebarEntry from "./lib/SidebarEntry.svelte";
   import converter from "./lib/showdown";
   import { onMount, setContext } from "svelte";
-  const baseUrl = import.meta.env.VITE_BASE_URL;
+
+  const baseUrl = `${import.meta.env.VITE_BASE_URL}`;
 
   // Handle forward/back buttons
   window.addEventListener("popstate", (event) => {
@@ -69,6 +70,8 @@
         historyUrl = historyUrl.replace(docId, customId);
       }
       history.pushState(data, "", historyUrl);
+    } else {
+      history.pushState(data, "", baseUrl);
     }
   }
 
@@ -107,6 +110,8 @@
       newSelected.classList.add("sidebar-selected");
     }
   }
+
+  setContext("baseUrl", { baseUrl });
 
   setContext("documentMain", {
     loadDocumentData,

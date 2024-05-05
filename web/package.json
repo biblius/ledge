@@ -4,9 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite build --outDir ../dist --minify esbuild -w --emptyOutDir",
-    "build": "vite build --outDir ../dist --minify esbuild --emptyOutDir",
-    "preview": "vite preview"
+    "dev": "vite build --outDir ../dist -w --emptyOutDir",
+    "build": "vite build --outDir ../dist --minify esbuild --emptyOutDir"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.0.2",

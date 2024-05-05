@@ -41,13 +41,5 @@ CREATE TABLE documents (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE sessions (
-    id UUID PRIMARY KEY NOT NULL,
-    expires TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 SELECT manage_updated_at('directories');
 SELECT manage_updated_at('documents');
-SELECT manage_updated_at('sessions');

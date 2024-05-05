@@ -1,13 +1,11 @@
 use crate::{
-    auth::Auth,
     document::models::DirectoryEntry,
     document::{DocumentData, DocumentMeta},
     error::LedgeknawError,
-    state::Documents,
+    state::DocumentService,
 };
 use axum::{http::Method, response::IntoResponse, routing::get, Json, Router};
 use axum_macros::debug_handler;
-use std::str::FromStr;
 use tower_http::{
     cors::CorsLayer,
     services::{ServeDir, ServeFile},
@@ -15,27 +13,17 @@ use tower_http::{
 };
 use tracing::info;
 
-use self::admin::admin_router;
-
-mod admin;
-
-pub fn router(state: Documents, auth: Option<Auth>) -> Router {
+pub fn router(state: DocumentService) -> Router {
     let router = public_router(state.clone());
 
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
         .allow_methods([Method::GET, Method::POST]);
 
-    if let Some(auth) = auth {
-        router.merge(admin_router(state, auth))
-    } else {
-        router
-    }
-    .layer(TraceLayer::new_for_http())
-    .layer(cors)
+    router.layer(TraceLayer::new_for_http()).layer(cors)
 }
 
-fn public_router(state: Documents) -> Router {
+fn public_router(state: DocumentService) -> Router {
     Router::new()
         .nest_service(
             "/",
@@ -51,7 +39,7 @@ fn public_router(state: Documents) -> Router {
 
 #[debug_handler]
 pub async fn index(
-    state: axum::extract::State<Documents>,
+    state: axum::extract::State<DocumentService>,
 ) -> Result<impl IntoResponse, LedgeknawError> {
     info!("Loading index");
     let doc_path = state.db.get_index_id_path().await?;
@@ -63,55 +51,30 @@ pub async fn index(
 }
 
 pub async fn document(
-    state: axum::extract::State<Documents>,
+    state: axum::extract::State<DocumentService>,
     path: axum::extract::Path<String>,
 ) -> Result<Json<DocumentData>, LedgeknawError> {
-    let uuid = uuid::Uuid::from_str(&path);
-
-    let Ok(uuid) = uuid else {
-        let Some((id, path)) = state.db.get_doc_id_path_by_custom_id(&path).await? else {
-            return Err(LedgeknawError::NotFound(path.0));
-        };
-
-        info!("Reading {path}");
-        let document = DocumentData::read_from_disk(id, path)?;
-        return Ok(Json(document));
-    };
-
-    let doc_path = state.db.get_doc_path(uuid).await?;
-
-    let Some(path) = doc_path else {
-        return Err(LedgeknawError::NotFound(path.0.to_string()));
-    };
-
-    info!("Reading {path}");
-    let document = DocumentData::read_from_disk(uuid, path)?;
-    Ok(Json(document))
+    Ok(Json(state.read_file(path.0).await?))
 }
 
 pub async fn document_meta(
-    state: axum::extract::State<Documents>,
-    path: axum::extract::Path<uuid::Uuid>,
+    state: axum::extract::State<DocumentService>,
+    id: axum::extract::Path<uuid::Uuid>,
 ) -> Result<Json<DocumentMeta>, LedgeknawError> {
-    let doc_path = state.db.get_doc_path(path.0).await?;
-    let Some(path) = doc_path else {
-        return Err(LedgeknawError::NotFound(path.0.to_string()));
-    };
-    let meta = DocumentMeta::read_from_file(path)?;
-    Ok(Json(meta))
+    Ok(Json(state.get_file_meta(*id).await?))
 }
 
 pub async fn sidebar_init(
-    state: axum::extract::State<Documents>,
+    state: axum::extract::State<DocumentService>,
 ) -> Result<Json<Vec<DirectoryEntry>>, LedgeknawError> {
     let docs = state.db.list_roots().await?;
     Ok(Json(docs))
 }
 
 pub async fn sidebar_entries(
-    state: axum::extract::State<Documents>,
+    state: axum::extract::State<DocumentService>,
     path: axum::extract::Path<uuid::Uuid>,
 ) -> Result<Json<Vec<DirectoryEntry>>, LedgeknawError> {
-    let files = state.db.list_entries(path.0).await?;
+    let files = state.db.list_entries(*path).await?;
     Ok(Json(files))
 }
