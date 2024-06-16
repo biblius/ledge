@@ -34,9 +34,4 @@ cargo run [ -- -l INFO|DEBUG|TRACE]
 npm run dev
 ```
 
-3. Go to http://127.0.0.1:3030 and ingest knawledge. Note, using `localhost` won't work due to cross origin stuff.
-
-## Stuff TODO
-
-- [ ] PDF, docx
-- [ ] Some LLM stuff probably
+3. Go to http://127.0.0.1:3030 and ingest knawledge.
